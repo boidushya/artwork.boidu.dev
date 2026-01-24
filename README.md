@@ -1,6 +1,6 @@
 # Artwork API
 
-A Cloudflare Worker that fetches animated album artwork from Apple Music.
+A Cloudflare Worker that fetches animated album artwork.
 
 ## API Endpoints
 
@@ -15,7 +15,7 @@ GET /?song=song&artist=artist
 GET /?id=albumId
 ```
 
-### Apple Music URL
+### Album URL
 ```
 GET /?url=https://music.apple.com/us/album/album-name/1234567890
 ```
@@ -70,6 +70,6 @@ npm run dev
 |-----------|---------|-------------|
 | `s` | `song` | Song name for search |
 | `a` | `artist` | Artist name for search |
-| `id` | - | Direct Apple Music album ID |
-| `url` | - | Full Apple Music album URL |
+| `id` | - | Direct album ID |
+| `url` | - | Full album URL |
 | `storefront` | - | Country code (default: `us`) |
