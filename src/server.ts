@@ -39,6 +39,9 @@ async function handleArtworkRequest(
   const albumId = url.searchParams.get('id');
   const appleUrl = url.searchParams.get('url');
   const storefront = url.searchParams.get('storefront') || 'us';
+  const albumName = url.searchParams.get('albumName') || undefined;
+  const durationParam = url.searchParams.get('duration');
+  const duration = durationParam ? parseInt(durationParam, 10) : undefined;
 
   let resolvedAlbumId: string | null = null;
   let trackName: string | null = null;
@@ -67,7 +70,7 @@ async function handleArtworkRequest(
   // Route 3: Search by song + artist
   else if (song && artist) {
     try {
-      const searchResult = await searchWithRetry(song, artist, token, storefront);
+      const searchResult = await searchWithRetry(song, artist, token, storefront, albumName, duration);
       if (!searchResult) {
         return { error: 'No matching tracks found' };
       }
@@ -117,16 +120,18 @@ async function searchWithRetry(
   song: string,
   artist: string,
   token: string,
-  storefront: string
+  storefront: string,
+  albumName?: string,
+  duration?: number
 ) {
   try {
-    return await searchTrack(song, artist, token, storefront);
+    return await searchTrack(song, artist, token, storefront, albumName, duration);
   } catch (error) {
     if (error instanceof Error && error.message === 'TOKEN_EXPIRED') {
       // Invalidate token and retry once
       invalidateToken();
       const newToken = await getToken();
-      return await searchTrack(song, artist, newToken, storefront);
+      return await searchTrack(song, artist, newToken, storefront, albumName, duration);
     }
     throw error;
   }

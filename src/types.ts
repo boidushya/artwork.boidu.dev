@@ -32,6 +32,7 @@ export interface AppleMusicTrack {
     artistName: string;
     name: string;
     url: string;
+    durationInMillis: number;
     artwork?: {
       url: string;
       width: number;
