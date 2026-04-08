@@ -1,9 +1,10 @@
 import { log, Tag } from './logger';
 
-const BURST = parseInt(process.env.APPLE_BURST || '3', 10);
-const RATE_PER_SEC = parseFloat(process.env.APPLE_RATE || '0.5');
+const BURST = parseInt(process.env.APPLE_BURST || '5', 10);
+const RATE_PER_SEC = parseFloat(process.env.APPLE_RATE || '1');
 const RETRY_ATTEMPTS = parseInt(process.env.APPLE_RETRY_ATTEMPTS || '3', 10);
 const RETRY_BASE_MS = parseInt(process.env.APPLE_RETRY_BASE_MS || '500', 10);
+const MAX_QUEUE_WAIT_MS = parseInt(process.env.APPLE_MAX_QUEUE_WAIT_MS || '10000', 10);
 const CIRCUIT_THRESHOLD = parseInt(process.env.APPLE_CIRCUIT_THRESHOLD || '3', 10);
 const CIRCUIT_BASE_OPEN_MS = parseInt(process.env.APPLE_CIRCUIT_BASE_OPEN_MS || '300000', 10);
 const CIRCUIT_MAX_OPEN_MS = parseInt(process.env.APPLE_CIRCUIT_MAX_OPEN_MS || '14400000', 10);
@@ -146,14 +147,26 @@ export class TokenBucket {
 
 const appleBucket = new TokenBucket(BURST, RATE_PER_SEC);
 
-export async function acquireAppleSlot(): Promise<number> {
+export class QueueTimeoutError extends Error {
+  constructor(public readonly waitedMs: number) {
+    super(`outbound throttle queue wait exceeded ${waitedMs}ms`);
+    this.name = 'QueueTimeoutError';
+  }
+}
+
+export async function acquireAppleSlot(maxWaitMs = MAX_QUEUE_WAIT_MS): Promise<number> {
   const start = Date.now();
   while (true) {
     if (appleBucket.tryConsume()) {
       return Date.now() - start;
     }
-    const waitMs = appleBucket.msUntilNextToken();
-    await new Promise<void>((r) => setTimeout(r, waitMs));
+    const waited = Date.now() - start;
+    if (waited >= maxWaitMs) {
+      throw new QueueTimeoutError(waited);
+    }
+    const tokenWaitMs = appleBucket.msUntilNextToken();
+    const sleepMs = Math.min(tokenWaitMs, maxWaitMs - waited);
+    await new Promise<void>((r) => setTimeout(r, sleepMs));
   }
 }
 
@@ -166,9 +179,24 @@ export async function fetchAppleWithRetry(
   circuitBreaker.check(endpoint);
 
   for (let attempt = 0; ; attempt++) {
-    const waited = await acquireAppleSlot();
-    if (waited > 50) {
-      log.debug(Tag.RATELIMIT, 'throttle waited', { endpoint, waitedMs: waited });
+    let waited: number;
+    try {
+      waited = await acquireAppleSlot();
+    } catch (err) {
+      if (err instanceof QueueTimeoutError) {
+        log.warn(Tag.RATELIMIT, 'queue timeout — failing fast', {
+          endpoint,
+          waitedMs: err.waitedMs,
+          maxWaitMs: MAX_QUEUE_WAIT_MS,
+        });
+        throw new UpstreamRateLimitedError(endpoint);
+      }
+      throw err;
+    }
+    if (waited > 2000) {
+      log.warn(Tag.RATELIMIT, 'throttle wait', { endpoint, waitedMs: waited });
+    } else if (waited > 50) {
+      log.info(Tag.RATELIMIT, 'throttle wait', { endpoint, waitedMs: waited });
     }
     const res = await fetch(url, init);
 

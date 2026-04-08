@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { TokenBucket, UpstreamRateLimitedError } from '../src/outboundLimiter.ts';
+import { TokenBucket, UpstreamRateLimitedError, QueueTimeoutError } from '../src/outboundLimiter.ts';
 
 describe('TokenBucket.refill', () => {
   test('does not overflow past capacity', () => {
@@ -116,3 +116,19 @@ describe('UpstreamRateLimitedError', () => {
     assert.equal(err.name, 'UpstreamRateLimitedError');
   });
 });
+
+describe('QueueTimeoutError', () => {
+  test('carries waitedMs and is identifiable via instanceof', () => {
+    const err = new QueueTimeoutError(12345);
+    assert.ok(err instanceof QueueTimeoutError);
+    assert.ok(err instanceof Error);
+    assert.equal(err.waitedMs, 12345);
+    assert.match(err.message, /12345/);
+  });
+
+  test('preserves error name', () => {
+    const err = new QueueTimeoutError(0);
+    assert.equal(err.name, 'QueueTimeoutError');
+  });
+});
+
