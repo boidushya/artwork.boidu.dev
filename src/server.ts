@@ -75,8 +75,9 @@ async function handleArtworkRequest(
   const albumIdParam = url.searchParams.get('id');
   const appleUrl = url.searchParams.get('url');
   const storefront = url.searchParams.get('storefront') || 'vn';
-  const albumName = url.searchParams.get('albumName') || undefined;
-  const durationParam = url.searchParams.get('duration');
+  const albumName =
+    url.searchParams.get('al') || url.searchParams.get('albumName') || undefined;
+  const durationParam = url.searchParams.get('d') || url.searchParams.get('duration');
   const duration = durationParam ? parseInt(durationParam, 10) : undefined;
 
   let resolvedAlbumId: string | null = null;
