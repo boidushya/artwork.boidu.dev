@@ -56,8 +56,9 @@ export async function searchTrack(
 
   let tracks = rawTracks;
   if (duration !== undefined) {
+    const durationMs = duration * 1000;
     const filtered = tracks.filter(
-      (track) => Math.abs(track.attributes.durationInMillis - duration) <= DURATION_MATCH_DELTA_MS
+      (track) => Math.abs(track.attributes.durationInMillis - durationMs) <= DURATION_MATCH_DELTA_MS
     );
     if (filtered.length > 0) {
       log.debug(Tag.SEARCH, 'duration filter', { kept: filtered.length, of: tracks.length });

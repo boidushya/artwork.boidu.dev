@@ -204,20 +204,29 @@ describe('searchTrack', () => {
     assert.equal(result.albumId, '999001');
   });
 
-  test('duration filter prefers tracks within delta', async () => {
+  test('duration filter prefers tracks within delta (client sends seconds, apple returns ms)', async () => {
     const target = makeTrack({ durationInMillis: 200000 }, 'target');
     const wrong = makeTrack({ durationInMillis: 500000 }, 'wrong');
     globalThis.fetch = async () => mockSearchResponse([wrong, target]);
-    const result = await searchTrack('Bohemian Rhapsody', 'Queen', 'TOKEN', 'vn', undefined, 200500);
+    const result = await searchTrack('Bohemian Rhapsody', 'Queen', 'TOKEN', 'vn', undefined, 200);
     assert.ok(result);
     assert.equal(result.track.id, 'target');
+  });
+
+  test('duration filter tolerates ±2 seconds of drift between client and apple', async () => {
+    const target = makeTrack({ durationInMillis: 241023 }, 'target');
+    const wrong = makeTrack({ durationInMillis: 500000 }, 'wrong');
+    globalThis.fetch = async () => mockSearchResponse([wrong, target]);
+    const result = await searchTrack('Bohemian Rhapsody', 'Queen', 'TOKEN', 'vn', undefined, 241);
+    assert.ok(result);
+    assert.equal(result.track.id, 'target', 'apple 241023ms should match client 241s within the 2000ms delta');
   });
 
   test('duration filter only excludes when at least one track matches', async () => {
     const t1 = makeTrack({ durationInMillis: 500000 }, 't1');
     const t2 = makeTrack({ durationInMillis: 600000 }, 't2');
     globalThis.fetch = async () => mockSearchResponse([t1, t2]);
-    const result = await searchTrack('Bohemian Rhapsody', 'Queen', 'TOKEN', 'vn', undefined, 100000);
+    const result = await searchTrack('Bohemian Rhapsody', 'Queen', 'TOKEN', 'vn', undefined, 100);
     assert.ok(result, 'when no track matches duration, filter is bypassed and results are scored normally');
   });
 
