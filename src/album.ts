@@ -1,4 +1,5 @@
 import type { AppleMusicAlbumResponse, AppleMusicAlbum } from './types';
+import { log, Tag } from './logger';
 
 const API_BASE = 'https://amp-api.music.apple.com/v1';
 
@@ -27,16 +28,21 @@ export async function fetchAlbum(
     headers['media-user-token'] = mut;
   }
 
-  console.log(`[mut] album request → header attached: ${!!mut}`);
+  log.info(Tag.ALBUM, '→ apple', { storefront, albumId, mut: !!mut });
+  const start = Date.now();
   const response = await fetch(url, { headers });
+  const ms = Date.now() - start;
 
   if (!response.ok) {
     if (response.status === 401) {
+      log.warn(Tag.ALBUM, '← 401 TOKEN_EXPIRED', { ms });
       throw new Error('TOKEN_EXPIRED');
     }
     if (response.status === 404) {
+      log.info(Tag.ALBUM, '← 404 not found', { albumId, ms });
       return null;
     }
+    log.error(Tag.ALBUM, '← error', { status: response.status, ms });
     throw new Error(`Album fetch failed: ${response.status}`);
   }
 
@@ -44,10 +50,19 @@ export async function fetchAlbum(
   const album = data.data?.[0];
 
   if (!album) {
+    log.warn(Tag.ALBUM, '← ok but empty data array', { ms });
     return null;
   }
 
-  return extractAlbumData(album);
+  const extracted = extractAlbumData(album);
+  log.info(Tag.ALBUM, '← ok', {
+    status: response.status,
+    ms,
+    name: extracted.name,
+    artist: extracted.artist,
+    hasAnimated: extracted.animatedUrl !== null,
+  });
+  return extracted;
 }
 
 function extractAlbumData(album: AppleMusicAlbum): AlbumData {

@@ -1,55 +1,66 @@
+import { log, Tag } from './logger';
+
 interface StreamInfo {
   bandwidth: number;
   url: string;
 }
 
+const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36';
+
 export async function resolveVideoUrl(m3u8Url: string): Promise<string | null> {
   try {
-    // Fetch the master playlist
-    const masterResponse = await fetch(m3u8Url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-      },
-    });
+    log.debug(Tag.M3U8, '→ master playlist');
+    const masterStart = Date.now();
+    const masterResponse = await fetch(m3u8Url, { headers: { 'User-Agent': UA } });
+    log.debug(Tag.M3U8, '← master', { status: masterResponse.status, ms: Date.now() - masterStart });
 
     if (!masterResponse.ok) {
-      console.error(`Failed to fetch master playlist: ${masterResponse.status}`);
+      log.error(Tag.M3U8, 'master playlist fetch failed', { status: masterResponse.status });
       return null;
     }
 
     const masterContent = await masterResponse.text();
     const baseUrl = getBaseUrl(m3u8Url);
 
-    // Parse stream variants and find highest bandwidth
     const streams = parseStreamVariants(masterContent, baseUrl);
 
     if (streams.length === 0) {
-      // This might be a media playlist directly, try to extract segment
-      return extractFirstSegment(masterContent, baseUrl);
+      log.debug(Tag.M3U8, 'no stream variants — treating as media playlist directly');
+      const segment = extractFirstSegment(masterContent, baseUrl);
+      if (segment) log.info(Tag.M3U8, 'resolved direct segment');
+      else log.warn(Tag.M3U8, 'no segment extracted');
+      return segment;
     }
 
-    // Sort by bandwidth descending and pick the highest
     streams.sort((a, b) => b.bandwidth - a.bandwidth);
     const bestStream = streams[0];
-
-    // Fetch the media playlist
-    const mediaResponse = await fetch(bestStream.url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-      },
+    log.debug(Tag.M3U8, 'selected best stream', {
+      bandwidth: bestStream.bandwidth,
+      variants: streams.length,
     });
 
+    const mediaStart = Date.now();
+    log.debug(Tag.M3U8, '→ media playlist');
+    const mediaResponse = await fetch(bestStream.url, { headers: { 'User-Agent': UA } });
+    log.debug(Tag.M3U8, '← media', { status: mediaResponse.status, ms: Date.now() - mediaStart });
+
     if (!mediaResponse.ok) {
-      console.error(`Failed to fetch media playlist: ${mediaResponse.status}`);
+      log.error(Tag.M3U8, 'media playlist fetch failed', { status: mediaResponse.status });
       return null;
     }
 
     const mediaContent = await mediaResponse.text();
     const mediaBaseUrl = getBaseUrl(bestStream.url);
+    const segment = extractFirstSegment(mediaContent, mediaBaseUrl);
 
-    return extractFirstSegment(mediaContent, mediaBaseUrl);
+    if (segment) {
+      log.info(Tag.M3U8, 'resolved video url', { bandwidth: bestStream.bandwidth });
+    } else {
+      log.warn(Tag.M3U8, 'no segment extracted from media playlist');
+    }
+    return segment;
   } catch (error) {
-    console.error('Error resolving video URL:', error);
+    log.error(Tag.M3U8, 'resolve failed', error);
     return null;
   }
 }

@@ -1,4 +1,5 @@
 import type { AppleMusicSearchResponse, AppleMusicTrack, SearchResult } from './types';
+import { log, Tag } from './logger';
 
 const API_BASE = 'https://amp-api.music.apple.com/v1';
 const MIN_SCORE_THRESHOLD = 0.6;
@@ -25,34 +26,42 @@ export async function searchTrack(
     headers['media-user-token'] = mut;
   }
 
-  console.log(`[mut] search request → header attached: ${!!mut}`);
+  log.info(Tag.SEARCH, '→ apple', { storefront, query, mut: !!mut, albumName, duration });
+  const start = Date.now();
   const response = await fetch(searchUrl, { headers });
+  const ms = Date.now() - start;
 
   if (!response.ok) {
     if (response.status === 401) {
+      log.warn(Tag.SEARCH, '← 401 TOKEN_EXPIRED', { ms });
       throw new Error('TOKEN_EXPIRED');
     }
+    log.error(Tag.SEARCH, '← error', { status: response.status, ms });
     throw new Error(`Search failed: ${response.status}`);
   }
 
   const data: AppleMusicSearchResponse = await response.json();
-  let tracks = data.results?.songs?.data;
+  const rawTracks = data.results?.songs?.data ?? [];
+  log.info(Tag.SEARCH, '← ok', { status: response.status, ms, tracks: rawTracks.length });
 
-  if (!tracks || tracks.length === 0) {
+  if (rawTracks.length === 0) {
+    log.info(Tag.SEARCH, 'no results from apple');
     return null;
   }
 
-  // Filter by duration if provided
+  let tracks = rawTracks;
   if (duration !== undefined) {
     const filtered = tracks.filter(
       (track) => Math.abs(track.attributes.durationInMillis - duration) <= DURATION_MATCH_DELTA_MS
     );
     if (filtered.length > 0) {
+      log.debug(Tag.SEARCH, 'duration filter', { kept: filtered.length, of: tracks.length });
       tracks = filtered;
+    } else {
+      log.debug(Tag.SEARCH, 'duration filter bypassed (no matches within delta)');
     }
   }
 
-  // Score and rank tracks
   const scored = tracks
     .map((track) => scoreTrack(track, song, artist, albumName))
     .filter((result): result is SearchResult => result !== null)
@@ -60,9 +69,19 @@ export async function searchTrack(
 
   const best = scored[0];
   if (!best || best.score < MIN_SCORE_THRESHOLD) {
+    log.info(Tag.SEARCH, 'below score threshold', {
+      bestScore: best?.score.toFixed(3) ?? 'none',
+      threshold: MIN_SCORE_THRESHOLD,
+    });
     return null;
   }
 
+  log.info(Tag.SEARCH, 'best match', {
+    albumId: best.albumId,
+    name: best.track.attributes.name,
+    artist: best.track.attributes.artistName,
+    score: best.score.toFixed(3),
+  });
   return best;
 }
 
@@ -152,10 +171,13 @@ function charFrequency(str: string): Map<string, number> {
   return freq;
 }
 
-function normalize(str: string): string {
+export function normalize(str: string): string {
   return str
+    .normalize('NFKD')
     .toLowerCase()
-    .replace(/[^\w\s]/g, '')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .normalize('NFC')
     .replace(/\s+/g, ' ')
     .trim();
 }
