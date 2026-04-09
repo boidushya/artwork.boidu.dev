@@ -5,8 +5,10 @@ import { log, Tag } from './logger';
 const DAY = 86400;
 const SEARCH_POSITIVE_TTL = 30 * DAY;
 const SEARCH_NEGATIVE_TTL = 7 * DAY;
-const ALBUM_ANIMATED_TTL = 365 * DAY;
-const ALBUM_NO_ANIMATED_TTL = 7 * DAY;
+const ALBUM_ANIMATED_TTL = 5 * 365 * DAY;
+const ALBUM_NO_ANIMATED_BASE_TTL = 7 * DAY;
+const ALBUM_NO_ANIMATED_MAX_TTL = 365 * DAY;
+const ALBUM_NO_ANIMATED_MULTIPLIER = 4;
 const ALBUM_NOT_FOUND_TTL = 7 * DAY;
 const ALBUM_VIDEO_RESOLUTION_FAILED_TTL = 1 * DAY;
 
@@ -20,6 +22,7 @@ export interface AlbumCacheRow {
   videoUrl: string | null;
   hasAnimated: boolean;
   notFound: boolean;
+  recheckCount: number;
 }
 
 export interface SearchIndexHit {
@@ -40,7 +43,9 @@ export const TTL = {
   SEARCH_POSITIVE: SEARCH_POSITIVE_TTL,
   SEARCH_NEGATIVE: SEARCH_NEGATIVE_TTL,
   ALBUM_ANIMATED: ALBUM_ANIMATED_TTL,
-  ALBUM_NO_ANIMATED: ALBUM_NO_ANIMATED_TTL,
+  ALBUM_NO_ANIMATED_BASE: ALBUM_NO_ANIMATED_BASE_TTL,
+  ALBUM_NO_ANIMATED_MAX: ALBUM_NO_ANIMATED_MAX_TTL,
+  ALBUM_NO_ANIMATED_MULTIPLIER: ALBUM_NO_ANIMATED_MULTIPLIER,
   ALBUM_NOT_FOUND: ALBUM_NOT_FOUND_TTL,
   ALBUM_VIDEO_RESOLUTION_FAILED: ALBUM_VIDEO_RESOLUTION_FAILED_TTL,
 } as const;
@@ -123,8 +128,9 @@ export async function getAlbumCache(
     video_url: string | null;
     has_animated: boolean;
     not_found: boolean;
+    recheck_count: number;
   }>(
-    `SELECT name, artist, static_url, animated_url, video_url, has_animated, not_found
+    `SELECT name, artist, static_url, animated_url, video_url, has_animated, not_found, recheck_count
      FROM album_cache
      WHERE storefront = $1 AND album_id = $2 AND expires_at > now()`,
     [storefront, albumId]
@@ -144,6 +150,7 @@ export async function getAlbumCache(
     videoUrl: row.video_url,
     hasAnimated: row.has_animated,
     notFound: row.not_found,
+    recheckCount: row.recheck_count,
   };
   log.info(Tag.CACHE_HIT, 'album_cache', {
     storefront,
@@ -153,15 +160,32 @@ export async function getAlbumCache(
   return mapped;
 }
 
-export function computeAlbumTtl(row: Pick<AlbumCacheRow, 'notFound' | 'hasAnimated' | 'videoUrl'>): number {
+export function computeAlbumTtl(row: Pick<AlbumCacheRow, 'notFound' | 'hasAnimated' | 'videoUrl'>, recheckCount = 0): number {
   if (row.notFound) return ALBUM_NOT_FOUND_TTL;
-  if (!row.hasAnimated) return ALBUM_NO_ANIMATED_TTL;
+  if (!row.hasAnimated) {
+    return Math.min(
+      ALBUM_NO_ANIMATED_BASE_TTL * Math.pow(ALBUM_NO_ANIMATED_MULTIPLIER, recheckCount),
+      ALBUM_NO_ANIMATED_MAX_TTL
+    );
+  }
   if (!row.videoUrl) return ALBUM_VIDEO_RESOLUTION_FAILED_TTL;
   return ALBUM_ANIMATED_TTL;
 }
 
 export async function upsertAlbumCache(row: AlbumCacheRow): Promise<void> {
-  const ttl = computeAlbumTtl(row);
+  let recheckCount = 0;
+  if (!row.hasAnimated && !row.notFound) {
+    const existing = await query<{ recheck_count: number }>(
+      `SELECT recheck_count FROM album_cache
+       WHERE storefront = $1 AND album_id = $2 AND NOT has_animated`,
+      [row.storefront, row.albumId]
+    );
+    if (existing?.rows.length) {
+      recheckCount = existing.rows[0].recheck_count + 1;
+    }
+  }
+
+  const ttl = computeAlbumTtl(row, recheckCount);
   const status = row.notFound
     ? 'NOT_FOUND'
     : row.hasAnimated
@@ -171,21 +195,23 @@ export async function upsertAlbumCache(row: AlbumCacheRow): Promise<void> {
     storefront: row.storefront,
     albumId: row.albumId,
     status,
+    recheckCount,
     ttlDays: Math.round(ttl / DAY),
   });
   await query(
     `INSERT INTO album_cache
-       (storefront, album_id, name, artist, static_url, animated_url, video_url, has_animated, not_found, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now() + ($10 || ' seconds')::interval)
+       (storefront, album_id, name, artist, static_url, animated_url, video_url, has_animated, not_found, recheck_count, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now() + ($11 || ' seconds')::interval)
      ON CONFLICT (storefront, album_id) DO UPDATE SET
-       name         = EXCLUDED.name,
-       artist       = EXCLUDED.artist,
-       static_url   = EXCLUDED.static_url,
-       animated_url = EXCLUDED.animated_url,
-       video_url    = EXCLUDED.video_url,
-       has_animated = EXCLUDED.has_animated,
-       not_found    = EXCLUDED.not_found,
-       expires_at   = EXCLUDED.expires_at`,
+       name          = EXCLUDED.name,
+       artist        = EXCLUDED.artist,
+       static_url    = EXCLUDED.static_url,
+       animated_url  = EXCLUDED.animated_url,
+       video_url     = EXCLUDED.video_url,
+       has_animated  = EXCLUDED.has_animated,
+       not_found     = EXCLUDED.not_found,
+       recheck_count = EXCLUDED.recheck_count,
+       expires_at    = EXCLUDED.expires_at`,
     [
       row.storefront,
       row.albumId,
@@ -196,6 +222,7 @@ export async function upsertAlbumCache(row: AlbumCacheRow): Promise<void> {
       row.videoUrl,
       row.hasAnimated,
       row.notFound,
+      recheckCount,
       ttl,
     ]
   );

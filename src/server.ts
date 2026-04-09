@@ -181,6 +181,7 @@ async function handleArtworkRequest(
         videoUrl: null,
         hasAnimated: false,
         notFound: true,
+        recheckCount: 0,
       });
       return { error: 'Album not found' };
     }
@@ -200,6 +201,7 @@ async function handleArtworkRequest(
       videoUrl,
       hasAnimated: albumData.animatedUrl !== null,
       notFound: false,
+      recheckCount: 0,
     });
 
     return {

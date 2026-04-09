@@ -112,9 +112,33 @@ describe('computeAlbumTtl', () => {
     assert.equal(ttl, TTL.ALBUM_NOT_FOUND);
   });
 
-  test('album exists but no animated artwork uses ALBUM_NO_ANIMATED TTL (7 days)', () => {
+  test('no-animated recheckCount=0 uses base TTL (7 days)', () => {
+    const ttl = computeAlbumTtl({ notFound: false, hasAnimated: false, videoUrl: null }, 0);
+    assert.equal(ttl, 7 * 86400);
+  });
+
+  test('no-animated recheckCount=1 uses 28 days (7 × 4^1)', () => {
+    const ttl = computeAlbumTtl({ notFound: false, hasAnimated: false, videoUrl: null }, 1);
+    assert.equal(ttl, 28 * 86400);
+  });
+
+  test('no-animated recheckCount=2 uses 112 days (7 × 4^2)', () => {
+    const ttl = computeAlbumTtl({ notFound: false, hasAnimated: false, videoUrl: null }, 2);
+    assert.equal(ttl, 112 * 86400);
+  });
+
+  test('no-animated recheckCount=3 caps at 365 days', () => {
+    const ttl = computeAlbumTtl({ notFound: false, hasAnimated: false, videoUrl: null }, 3);
+    assert.equal(ttl, 365 * 86400);
+  });
+
+  test('no-animated recheckCount=10 still caps at 365 days', () => {
+    const ttl = computeAlbumTtl({ notFound: false, hasAnimated: false, videoUrl: null }, 10);
+    assert.equal(ttl, 365 * 86400);
+  });
+
+  test('no-animated without recheckCount defaults to base (7 days)', () => {
     const ttl = computeAlbumTtl({ notFound: false, hasAnimated: false, videoUrl: null });
-    assert.equal(ttl, TTL.ALBUM_NO_ANIMATED);
     assert.equal(ttl, 7 * 86400);
   });
 
@@ -124,13 +148,13 @@ describe('computeAlbumTtl', () => {
     assert.equal(ttl, 1 * 86400);
   });
 
-  test('animated exists and video URL resolved uses 1 year TTL', () => {
+  test('animated exists and video URL resolved uses 5 year TTL', () => {
     const ttl = computeAlbumTtl({
       notFound: false,
       hasAnimated: true,
       videoUrl: 'https://cdn.apple.com/video.mp4',
     });
     assert.equal(ttl, TTL.ALBUM_ANIMATED);
-    assert.equal(ttl, 365 * 86400);
+    assert.equal(ttl, 5 * 365 * 86400);
   });
 });
