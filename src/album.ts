@@ -10,6 +10,7 @@ export interface AlbumData {
   albumId: string;
   staticUrl: string;
   animatedUrl: string | null;
+  animatedVerticalUrl: string | null;
 }
 
 export async function fetchAlbum(
@@ -66,6 +67,7 @@ export async function fetchAlbum(
     name: extracted.name,
     artist: extracted.artist,
     hasAnimated: extracted.animatedUrl !== null,
+    hasVertical: extracted.animatedVerticalUrl !== null,
   });
   return extracted;
 }
@@ -77,14 +79,16 @@ function extractAlbumData(album: AppleMusicAlbum): AlbumData {
   let staticUrl = attrs.artwork.url;
   staticUrl = staticUrl.replace('{w}', '1200').replace('{h}', '1200');
 
-  // Extract animated video URL if available
   let animatedUrl: string | null = null;
+  let animatedVerticalUrl: string | null = null;
   const editorialVideo = attrs.editorialVideo;
 
   if (editorialVideo) {
-    // Prefer motionDetailSquare, fallback to motionSquareVideo1x1
     animatedUrl = editorialVideo.motionDetailSquare?.video
       || editorialVideo.motionSquareVideo1x1?.video
+      || null;
+    animatedVerticalUrl = editorialVideo.motionDetailTall?.video
+      || editorialVideo.motionTallVideo3x4?.video
       || null;
   }
 
@@ -94,6 +98,7 @@ function extractAlbumData(album: AppleMusicAlbum): AlbumData {
     albumId: album.id,
     staticUrl,
     animatedUrl,
+    animatedVerticalUrl,
   };
 }
 

@@ -82,6 +82,8 @@ CREATE INDEX IF NOT EXISTS idx_album_expiry  ON album_cache  (expires_at);
 CREATE INDEX IF NOT EXISTS idx_search_expiry ON search_index (expires_at);
 
 ALTER TABLE album_cache ADD COLUMN IF NOT EXISTS recheck_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE album_cache ADD COLUMN IF NOT EXISTS animated_vertical_url TEXT;
+ALTER TABLE album_cache ADD COLUMN IF NOT EXISTS video_vertical_url    TEXT;
 `;
 
 export async function runMigrations(): Promise<void> {

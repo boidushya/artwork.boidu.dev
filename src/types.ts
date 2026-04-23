@@ -8,7 +8,9 @@ export interface ArtworkResponse {
   albumId: string;
   static: string;
   animated: string | null;
+  animatedVertical: string | null;
   videoUrl: string | null;
+  videoUrlVertical: string | null;
 }
 
 export interface ErrorResponse {
@@ -66,6 +68,12 @@ export interface AppleMusicAlbum {
         video: string;
       };
       motionSquareVideo1x1?: {
+        video: string;
+      };
+      motionDetailTall?: {
+        video: string;
+      };
+      motionTallVideo3x4?: {
         video: string;
       };
     };

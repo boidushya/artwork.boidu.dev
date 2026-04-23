@@ -105,11 +105,10 @@ async function handleArtworkRequest(
       return { error: 'Album not found' };
     }
 
-    // Resolve video URL if animated artwork exists
-    let videoUrl: string | null = null;
-    if (albumData.animatedUrl) {
-      videoUrl = await resolveVideoUrl(albumData.animatedUrl);
-    }
+    const [videoUrl, videoUrlVertical] = await Promise.all([
+      albumData.animatedUrl ? resolveVideoUrl(albumData.animatedUrl) : Promise.resolve(null),
+      albumData.animatedVerticalUrl ? resolveVideoUrl(albumData.animatedVerticalUrl) : Promise.resolve(null),
+    ]);
 
     return {
       name: trackName || albumData.name,
@@ -117,7 +116,9 @@ async function handleArtworkRequest(
       albumId: albumData.albumId,
       static: albumData.staticUrl,
       animated: albumData.animatedUrl,
+      animatedVertical: albumData.animatedVerticalUrl,
       videoUrl,
+      videoUrlVertical,
     };
   } catch (error) {
     console.error('Album fetch failed:', error);

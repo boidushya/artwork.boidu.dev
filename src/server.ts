@@ -156,7 +156,9 @@ async function handleArtworkRequest(
       albumId: cachedAlbum.albumId,
       static: cachedAlbum.staticUrl || '',
       animated: cachedAlbum.animatedUrl,
+      animatedVertical: cachedAlbum.animatedVerticalUrl,
       videoUrl: cachedAlbum.videoUrl,
+      videoUrlVertical: cachedAlbum.videoVerticalUrl,
     };
   }
 
@@ -178,7 +180,9 @@ async function handleArtworkRequest(
         artist: null,
         staticUrl: null,
         animatedUrl: null,
+        animatedVerticalUrl: null,
         videoUrl: null,
+        videoVerticalUrl: null,
         hasAnimated: false,
         notFound: true,
         recheckCount: 0,
@@ -186,10 +190,10 @@ async function handleArtworkRequest(
       return { error: 'Album not found' };
     }
 
-    let videoUrl: string | null = null;
-    if (albumData.animatedUrl) {
-      videoUrl = await resolveVideoUrl(albumData.animatedUrl);
-    }
+    const [videoUrl, videoVerticalUrl] = await Promise.all([
+      albumData.animatedUrl ? resolveVideoUrl(albumData.animatedUrl) : Promise.resolve(null),
+      albumData.animatedVerticalUrl ? resolveVideoUrl(albumData.animatedVerticalUrl) : Promise.resolve(null),
+    ]);
 
     await upsertAlbumCache({
       storefront,
@@ -198,8 +202,10 @@ async function handleArtworkRequest(
       artist: albumData.artist,
       staticUrl: albumData.staticUrl,
       animatedUrl: albumData.animatedUrl,
+      animatedVerticalUrl: albumData.animatedVerticalUrl,
       videoUrl,
-      hasAnimated: albumData.animatedUrl !== null,
+      videoVerticalUrl,
+      hasAnimated: albumData.animatedUrl !== null || albumData.animatedVerticalUrl !== null,
       notFound: false,
       recheckCount: 0,
     });
@@ -210,7 +216,9 @@ async function handleArtworkRequest(
       albumId: albumData.albumId,
       static: albumData.staticUrl,
       animated: albumData.animatedUrl,
+      animatedVertical: albumData.animatedVerticalUrl,
       videoUrl,
+      videoUrlVertical: videoVerticalUrl,
     };
   } catch (error) {
     if (error instanceof UpstreamRateLimitedError) throw error;

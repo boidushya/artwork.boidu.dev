@@ -19,7 +19,9 @@ export interface AlbumCacheRow {
   artist: string | null;
   staticUrl: string | null;
   animatedUrl: string | null;
+  animatedVerticalUrl: string | null;
   videoUrl: string | null;
+  videoVerticalUrl: string | null;
   hasAnimated: boolean;
   notFound: boolean;
   recheckCount: number;
@@ -125,12 +127,14 @@ export async function getAlbumCache(
     artist: string | null;
     static_url: string | null;
     animated_url: string | null;
+    animated_vertical_url: string | null;
     video_url: string | null;
+    video_vertical_url: string | null;
     has_animated: boolean;
     not_found: boolean;
     recheck_count: number;
   }>(
-    `SELECT name, artist, static_url, animated_url, video_url, has_animated, not_found, recheck_count
+    `SELECT name, artist, static_url, animated_url, animated_vertical_url, video_url, video_vertical_url, has_animated, not_found, recheck_count
      FROM album_cache
      WHERE storefront = $1 AND album_id = $2 AND expires_at > now()`,
     [storefront, albumId]
@@ -147,7 +151,9 @@ export async function getAlbumCache(
     artist: row.artist,
     staticUrl: row.static_url,
     animatedUrl: row.animated_url,
+    animatedVerticalUrl: row.animated_vertical_url,
     videoUrl: row.video_url,
+    videoVerticalUrl: row.video_vertical_url,
     hasAnimated: row.has_animated,
     notFound: row.not_found,
     recheckCount: row.recheck_count,
@@ -200,18 +206,20 @@ export async function upsertAlbumCache(row: AlbumCacheRow): Promise<void> {
   });
   await query(
     `INSERT INTO album_cache
-       (storefront, album_id, name, artist, static_url, animated_url, video_url, has_animated, not_found, recheck_count, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now() + ($11 || ' seconds')::interval)
+       (storefront, album_id, name, artist, static_url, animated_url, animated_vertical_url, video_url, video_vertical_url, has_animated, not_found, recheck_count, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now() + ($13 || ' seconds')::interval)
      ON CONFLICT (storefront, album_id) DO UPDATE SET
-       name          = EXCLUDED.name,
-       artist        = EXCLUDED.artist,
-       static_url    = EXCLUDED.static_url,
-       animated_url  = EXCLUDED.animated_url,
-       video_url     = EXCLUDED.video_url,
-       has_animated  = EXCLUDED.has_animated,
-       not_found     = EXCLUDED.not_found,
-       recheck_count = EXCLUDED.recheck_count,
-       expires_at    = EXCLUDED.expires_at`,
+       name                   = EXCLUDED.name,
+       artist                 = EXCLUDED.artist,
+       static_url             = EXCLUDED.static_url,
+       animated_url           = EXCLUDED.animated_url,
+       animated_vertical_url  = EXCLUDED.animated_vertical_url,
+       video_url              = EXCLUDED.video_url,
+       video_vertical_url     = EXCLUDED.video_vertical_url,
+       has_animated           = EXCLUDED.has_animated,
+       not_found              = EXCLUDED.not_found,
+       recheck_count          = EXCLUDED.recheck_count,
+       expires_at             = EXCLUDED.expires_at`,
     [
       row.storefront,
       row.albumId,
@@ -219,7 +227,9 @@ export async function upsertAlbumCache(row: AlbumCacheRow): Promise<void> {
       row.artist,
       row.staticUrl,
       row.animatedUrl,
+      row.animatedVerticalUrl,
       row.videoUrl,
+      row.videoVerticalUrl,
       row.hasAnimated,
       row.notFound,
       recheckCount,
