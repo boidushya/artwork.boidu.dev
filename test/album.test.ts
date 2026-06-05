@@ -155,7 +155,7 @@ describe('fetchAlbum', () => {
     assert.equal(result, null);
   });
 
-  test('replaces {w}x{h} placeholders with native artwork dimensions', async () => {
+  test('replaces {w}x{h} placeholders with 1200x1200 in static URL', async () => {
     globalThis.fetch = async () =>
       mockAlbumResponse({
         attributes: {
@@ -164,13 +164,13 @@ describe('fetchAlbum', () => {
           artwork: {
             url: 'https://cdn.example.com/img/{w}x{h}.jpg',
             width: 3000,
-            height: 2400,
+            height: 3000,
           },
         },
       });
     const result = await fetchAlbum('12345', 'TOKEN');
     assert.ok(result);
-    assert.equal(result.staticUrl, 'https://cdn.example.com/img/3000x2400.jpg');
+    assert.equal(result.staticUrl, 'https://cdn.example.com/img/1200x1200.jpg');
   });
 
   test('returns null animatedUrl when editorialVideo missing', async () => {

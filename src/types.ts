@@ -25,24 +25,6 @@ export interface AppleMusicSearchResponse {
   };
 }
 
-export interface AppleMusicSuggestionsResponse {
-  results?: {
-    suggestions?: AppleMusicSuggestion[];
-  };
-  resources?: {
-    songs?: Record<string, AppleMusicTrack>;
-  };
-}
-
-export interface AppleMusicSuggestion {
-  kind: 'terms' | 'topResults' | string;
-  content?: {
-    id: string;
-    type: string;
-    href: string;
-  };
-}
-
 export interface AppleMusicTrack {
   id: string;
   type: string;
