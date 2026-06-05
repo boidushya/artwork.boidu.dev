@@ -16,6 +16,23 @@ function mockSearchResponse(tracks: AppleMusicTrack[], status = 200): Response {
   return new Response(JSON.stringify({ results: { songs: { data: tracks } } }), { status });
 }
 
+function mockSuggestionsResponse(tracks: AppleMusicTrack[], status = 200): Response {
+  return new Response(
+    JSON.stringify({
+      results: {
+        suggestions: tracks.map((track) => ({
+          kind: 'topResults',
+          content: { id: track.id, type: 'songs', href: track.href },
+        })),
+      },
+      resources: {
+        songs: Object.fromEntries(tracks.map((track) => [track.id, track])),
+      },
+    }),
+    { status }
+  );
+}
+
 function makeTrack(overrides: Partial<AppleMusicTrack['attributes']> = {}, id = '12345', albumId = '999001'): AppleMusicTrack {
   return {
     id,
@@ -97,6 +114,36 @@ describe('stringSimilarity', () => {
 });
 
 describe('searchTrack', () => {
+  test('tries suggestions before the Apple Music search endpoint', async () => {
+    const urls: string[] = [];
+    globalThis.fetch = async (url) => {
+      urls.push(String(url));
+      return urls.length === 1 ? mockSuggestionsResponse([]) : mockSearchResponse([makeTrack()]);
+    };
+
+    const result = await searchTrack('Bohemian Rhapsody', 'Queen', 'TOKEN');
+
+    assert.ok(result);
+    assert.match(urls[0], /^https:\/\/amp-api-edge\.music\.apple\.com\/v1\/catalog\/vn\/search\/suggestions/);
+    assert.match(urls[0], /term=Bohemian\+Rhapsody\+Queen/);
+    assert.match(urls[1], /^https:\/\/amp-api\.music\.apple\.com\/v1\/catalog\/vn\/search/);
+  });
+
+  test('returns a matching suggestion without calling the search endpoint', async () => {
+    const urls: string[] = [];
+    globalThis.fetch = async (url) => {
+      urls.push(String(url));
+      return mockSuggestionsResponse([makeTrack()]);
+    };
+
+    const result = await searchTrack('Bohemian Rhapsody', 'Queen', 'TOKEN');
+
+    assert.ok(result);
+    assert.equal(result.albumId, '999001');
+    assert.equal(urls.length, 1);
+    assert.match(urls[0], /\/search\/suggestions/);
+  });
+
   test('builds URL with default storefront vn', async () => {
     let captured = '';
     globalThis.fetch = async (url) => {

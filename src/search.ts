@@ -1,8 +1,14 @@
-import type { AppleMusicSearchResponse, AppleMusicTrack, SearchResult } from './types';
+import type {
+  AppleMusicSearchResponse,
+  AppleMusicSuggestionsResponse,
+  AppleMusicTrack,
+  SearchResult,
+} from './types';
 import { log, Tag } from './logger';
 import { fetchAppleWithRetry, UpstreamRateLimitedError } from './outboundLimiter';
 
 const API_BASE = 'https://amp-api.music.apple.com/v1';
+const SUGGESTIONS_API_BASE = 'https://amp-api-edge.music.apple.com/v1';
 const MIN_SCORE_THRESHOLD = 0.6;
 const DURATION_MATCH_DELTA_MS = 2000;
 
@@ -16,8 +22,39 @@ export async function searchTrack(
   mut?: string
 ): Promise<SearchResult | null> {
   const query = `${song} ${artist}`.trim();
-  const searchUrl = `${API_BASE}/catalog/${storefront}/search?term=${encodeURIComponent(query)}&types=songs&limit=10`;
+  const headers = makeAppleHeaders(token, mut);
 
+  log.info(Tag.SEARCH, 'search start', { storefront, query, mut: !!mut, albumName, duration });
+
+  const suggestionTracks = await fetchSuggestionTracks(query, storefront, headers);
+  if (suggestionTracks.length > 0) {
+    const suggestionBest = selectBestTrack(suggestionTracks, song, artist, albumName, duration);
+    if (suggestionBest) {
+      logBestMatch('suggestions best match', suggestionBest);
+      return suggestionBest;
+    }
+    log.info(Tag.SEARCH, 'suggestions below score threshold; falling back to search');
+  } else {
+    log.info(Tag.SEARCH, 'no song results from suggestions; falling back to search');
+  }
+
+  const searchTracks = await fetchSearchTracks(query, storefront, headers);
+  if (searchTracks.length === 0) {
+    log.info(Tag.SEARCH, 'no results from apple search');
+    return null;
+  }
+
+  const best = selectBestTrack(searchTracks, song, artist, albumName, duration);
+  if (!best) {
+    log.info(Tag.SEARCH, 'search below score threshold');
+    return null;
+  }
+
+  logBestMatch('search best match', best);
+  return best;
+}
+
+function makeAppleHeaders(token: string, mut?: string): Record<string, string> {
   const headers: Record<string, string> = {
     'Authorization': `Bearer ${token}`,
     'Origin': 'https://music.apple.com',
@@ -26,34 +63,111 @@ export async function searchTrack(
   if (mut) {
     headers['media-user-token'] = mut;
   }
+  return headers;
+}
 
-  log.info(Tag.SEARCH, '→ apple', { storefront, query, mut: !!mut, albumName, duration });
+async function fetchSuggestionTracks(
+  query: string,
+  storefront: string,
+  headers: Record<string, string>
+): Promise<AppleMusicTrack[]> {
+  const url = buildSuggestionsUrl(query, storefront);
+  log.info(Tag.SEARCH, '→ apple suggestions', { storefront, query });
+  const start = Date.now();
+  const response = await fetchAppleWithRetry(url, { headers }, 'search', Tag.SEARCH);
+  const ms = Date.now() - start;
+
+  if (!response.ok) {
+    if (response.status === 429) {
+      log.error(Tag.SEARCH, '← suggestions 429 rate limited after retries', { ms });
+      throw new UpstreamRateLimitedError('search');
+    }
+    log.warn(Tag.SEARCH, '← suggestions error; falling back to search', { status: response.status, ms });
+    return [];
+  }
+
+  const data: AppleMusicSuggestionsResponse = await response.json();
+  const tracks = extractSuggestionTracks(data);
+  log.info(Tag.SEARCH, '← suggestions ok', { status: response.status, ms, tracks: tracks.length });
+  return tracks;
+}
+
+function buildSuggestionsUrl(query: string, storefront: string): string {
+  const params = new URLSearchParams({
+    'art[url]': 'f',
+    'fields[albums]': 'artistName,artwork,contentRating,name,playParams,url',
+    'fields[artists]': 'url,name,artwork',
+    'fields[songs]': 'albumName,artistName,artwork,contentRating,durationInMillis,name,playParams,url',
+    'format[resources]': 'map',
+    kinds: 'terms,topResults',
+    l: 'en-US',
+    'limit[results:terms]': '5',
+    'limit[results:topResults]': '10',
+    'omit[resource]': 'autos',
+    platform: 'web',
+    term: query,
+    types:
+      'activities,albums,artists,editorial-items,music-movies,music-videos,playlists,record-labels,songs,stations,tv-episodes',
+    with: 'naturalLanguage',
+  });
+  return `${SUGGESTIONS_API_BASE}/catalog/${storefront}/search/suggestions?${params.toString()}`;
+}
+
+function extractSuggestionTracks(data: AppleMusicSuggestionsResponse): AppleMusicTrack[] {
+  const songResources = data.resources?.songs ?? {};
+  const seen = new Set<string>();
+  const tracks: AppleMusicTrack[] = [];
+
+  for (const suggestion of data.results?.suggestions ?? []) {
+    if (suggestion.kind !== 'topResults' || suggestion.content?.type !== 'songs') continue;
+    const id = suggestion.content.id;
+    const track = songResources[id];
+    if (!track || seen.has(id)) continue;
+    tracks.push(track);
+    seen.add(id);
+  }
+
+  return tracks;
+}
+
+async function fetchSearchTracks(
+  query: string,
+  storefront: string,
+  headers: Record<string, string>
+): Promise<AppleMusicTrack[]> {
+  const searchUrl = `${API_BASE}/catalog/${storefront}/search?term=${encodeURIComponent(query)}&types=songs&limit=10`;
+
+  log.info(Tag.SEARCH, '→ apple search', { storefront, query });
   const start = Date.now();
   const response = await fetchAppleWithRetry(searchUrl, { headers }, 'search', Tag.SEARCH);
   const ms = Date.now() - start;
 
   if (!response.ok) {
     if (response.status === 401) {
-      log.warn(Tag.SEARCH, '← 401 TOKEN_EXPIRED', { ms });
+      log.warn(Tag.SEARCH, '← search 401 TOKEN_EXPIRED', { ms });
       throw new Error('TOKEN_EXPIRED');
     }
     if (response.status === 429) {
-      log.error(Tag.SEARCH, '← 429 rate limited after retries', { ms });
+      log.error(Tag.SEARCH, '← search 429 rate limited after retries', { ms });
       throw new UpstreamRateLimitedError('search');
     }
-    log.error(Tag.SEARCH, '← error', { status: response.status, ms });
+    log.error(Tag.SEARCH, '← search error', { status: response.status, ms });
     throw new Error(`Search failed: ${response.status}`);
   }
 
   const data: AppleMusicSearchResponse = await response.json();
-  const rawTracks = data.results?.songs?.data ?? [];
-  log.info(Tag.SEARCH, '← ok', { status: response.status, ms, tracks: rawTracks.length });
+  const tracks = data.results?.songs?.data ?? [];
+  log.info(Tag.SEARCH, '← search ok', { status: response.status, ms, tracks: tracks.length });
+  return tracks;
+}
 
-  if (rawTracks.length === 0) {
-    log.info(Tag.SEARCH, 'no results from apple');
-    return null;
-  }
-
+function selectBestTrack(
+  rawTracks: AppleMusicTrack[],
+  song: string,
+  artist: string,
+  albumName?: string,
+  duration?: number
+): SearchResult | null {
   let tracks = rawTracks;
   if (duration !== undefined) {
     const durationMs = duration * 1000;
@@ -75,20 +189,19 @@ export async function searchTrack(
 
   const best = scored[0];
   if (!best || best.score < MIN_SCORE_THRESHOLD) {
-    log.info(Tag.SEARCH, 'below score threshold', {
-      bestScore: best?.score.toFixed(3) ?? 'none',
-      threshold: MIN_SCORE_THRESHOLD,
-    });
     return null;
   }
 
-  log.info(Tag.SEARCH, 'best match', {
+  return best;
+}
+
+function logBestMatch(message: string, best: SearchResult): void {
+  log.info(Tag.SEARCH, message, {
     albumId: best.albumId,
     name: best.track.attributes.name,
     artist: best.track.attributes.artistName,
     score: best.score.toFixed(3),
   });
-  return best;
 }
 
 function scoreTrack(

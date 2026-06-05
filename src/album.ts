@@ -75,9 +75,10 @@ export async function fetchAlbum(
 function extractAlbumData(album: AppleMusicAlbum): AlbumData {
   const attrs = album.attributes;
 
-  // Build static artwork URL (replace {w}x{h} with 1200x1200)
   let staticUrl = attrs.artwork.url;
-  staticUrl = staticUrl.replace('{w}', '1200').replace('{h}', '1200');
+  staticUrl = staticUrl
+    .replace('{w}', attrs.artwork.width.toString())
+    .replace('{h}', attrs.artwork.height.toString());
 
   let animatedUrl: string | null = null;
   let animatedVerticalUrl: string | null = null;
