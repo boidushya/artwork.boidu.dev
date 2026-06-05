@@ -46,6 +46,7 @@ export async function searchTrack(
 
   const best = selectBestTrack(searchTracks, song, artist, albumName, duration);
   if (!best) {
+    log.info(Tag.SEARCH, 'search below score threshold');
     return null;
   }
 
@@ -77,10 +78,6 @@ async function fetchSuggestionTracks(
   const ms = Date.now() - start;
 
   if (!response.ok) {
-    if (response.status === 401) {
-      log.warn(Tag.SEARCH, '← suggestions 401 TOKEN_EXPIRED', { ms });
-      throw new Error('TOKEN_EXPIRED');
-    }
     if (response.status === 429) {
       log.error(Tag.SEARCH, '← suggestions 429 rate limited after retries', { ms });
       throw new UpstreamRateLimitedError('search');
@@ -192,18 +189,10 @@ function selectBestTrack(
 
   const best = scored[0];
   if (!best || best.score < MIN_SCORE_THRESHOLD) {
-    logBelowThreshold(best);
     return null;
   }
 
   return best;
-}
-
-function logBelowThreshold(best: SearchResult | null): void {
-  log.info(Tag.SEARCH, 'below score threshold', {
-    bestScore: best?.score.toFixed(3) ?? 'none',
-    threshold: MIN_SCORE_THRESHOLD,
-  });
 }
 
 function logBestMatch(message: string, best: SearchResult): void {

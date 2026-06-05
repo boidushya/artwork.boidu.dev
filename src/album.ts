@@ -1,11 +1,8 @@
-import { log, Tag } from "./logger";
-import {
-  fetchAppleWithRetry,
-  UpstreamRateLimitedError,
-} from "./outboundLimiter";
-import type { AppleMusicAlbum, AppleMusicAlbumResponse } from "./types";
+import type { AppleMusicAlbumResponse, AppleMusicAlbum } from './types';
+import { log, Tag } from './logger';
+import { fetchAppleWithRetry, UpstreamRateLimitedError } from './outboundLimiter';
 
-const API_BASE = "https://amp-api.music.apple.com/v1";
+const API_BASE = 'https://amp-api.music.apple.com/v1';
 
 export interface AlbumData {
   name: string;
@@ -19,44 +16,39 @@ export interface AlbumData {
 export async function fetchAlbum(
   albumId: string,
   token: string,
-  storefront: string = "vn",
-  mut?: string,
+  storefront: string = 'vn',
+  mut?: string
 ): Promise<AlbumData | null> {
   const url = `${API_BASE}/catalog/${storefront}/albums/${albumId}?extend=editorialVideo`;
 
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-    Origin: "https://music.apple.com",
-    Referer: "https://music.apple.com/",
+    'Authorization': `Bearer ${token}`,
+    'Origin': 'https://music.apple.com',
+    'Referer': 'https://music.apple.com/',
   };
   if (mut) {
-    headers["media-user-token"] = mut;
+    headers['media-user-token'] = mut;
   }
 
-  log.info(Tag.ALBUM, "→ apple", { storefront, albumId, mut: !!mut });
+  log.info(Tag.ALBUM, '→ apple', { storefront, albumId, mut: !!mut });
   const start = Date.now();
-  const response = await fetchAppleWithRetry(
-    url,
-    { headers },
-    "album",
-    Tag.ALBUM,
-  );
+  const response = await fetchAppleWithRetry(url, { headers }, 'album', Tag.ALBUM);
   const ms = Date.now() - start;
 
   if (!response.ok) {
     if (response.status === 401) {
-      log.warn(Tag.ALBUM, "← 401 TOKEN_EXPIRED", { ms });
-      throw new Error("TOKEN_EXPIRED");
+      log.warn(Tag.ALBUM, '← 401 TOKEN_EXPIRED', { ms });
+      throw new Error('TOKEN_EXPIRED');
     }
     if (response.status === 404) {
-      log.info(Tag.ALBUM, "← 404 not found", { albumId, ms });
+      log.info(Tag.ALBUM, '← 404 not found', { albumId, ms });
       return null;
     }
     if (response.status === 429) {
-      log.error(Tag.ALBUM, "← 429 rate limited after retries", { ms });
-      throw new UpstreamRateLimitedError("album");
+      log.error(Tag.ALBUM, '← 429 rate limited after retries', { ms });
+      throw new UpstreamRateLimitedError('album');
     }
-    log.error(Tag.ALBUM, "← error", { status: response.status, ms });
+    log.error(Tag.ALBUM, '← error', { status: response.status, ms });
     throw new Error(`Album fetch failed: ${response.status}`);
   }
 
@@ -64,12 +56,12 @@ export async function fetchAlbum(
   const album = data.data?.[0];
 
   if (!album) {
-    log.warn(Tag.ALBUM, "← ok but empty data array", { ms });
+    log.warn(Tag.ALBUM, '← ok but empty data array', { ms });
     return null;
   }
 
   const extracted = extractAlbumData(album);
-  log.info(Tag.ALBUM, "← ok", {
+  log.info(Tag.ALBUM, '← ok', {
     status: response.status,
     ms,
     name: extracted.name,
@@ -83,25 +75,22 @@ export async function fetchAlbum(
 function extractAlbumData(album: AppleMusicAlbum): AlbumData {
   const attrs = album.attributes;
 
-  // Build static artwork URL (replace {w}x{h} with 1200x1200)
   let staticUrl = attrs.artwork.url;
   staticUrl = staticUrl
-    .replace("{w}", album.attributes.artwork.width.toString())
-    .replace("{h}", album.attributes.artwork.width.toString());
+    .replace('{w}', attrs.artwork.width.toString())
+    .replace('{h}', attrs.artwork.height.toString());
 
   let animatedUrl: string | null = null;
   let animatedVerticalUrl: string | null = null;
   const editorialVideo = attrs.editorialVideo;
 
   if (editorialVideo) {
-    animatedUrl =
-      editorialVideo.motionDetailSquare?.video ||
-      editorialVideo.motionSquareVideo1x1?.video ||
-      null;
-    animatedVerticalUrl =
-      editorialVideo.motionDetailTall?.video ||
-      editorialVideo.motionTallVideo3x4?.video ||
-      null;
+    animatedUrl = editorialVideo.motionDetailSquare?.video
+      || editorialVideo.motionSquareVideo1x1?.video
+      || null;
+    animatedVerticalUrl = editorialVideo.motionDetailTall?.video
+      || editorialVideo.motionTallVideo3x4?.video
+      || null;
   }
 
   return {

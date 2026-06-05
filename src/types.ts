@@ -36,8 +36,6 @@ export interface AppleMusicSuggestionsResponse {
 
 export interface AppleMusicSuggestion {
   kind: 'terms' | 'topResults' | string;
-  searchTerm?: string;
-  displayTerm?: string;
   content?: {
     id: string;
     type: string;
