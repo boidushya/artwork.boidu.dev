@@ -59,7 +59,7 @@ async function handleArtworkRequest(
   // Get token (with automatic caching)
   let token: string;
   try {
-    token = await getToken(env);
+    token = (await getToken(env)).token;
   } catch (error) {
     console.error('Failed to get token:', error);
     return { error: 'Failed to authenticate with Apple Music' };
@@ -141,7 +141,7 @@ async function searchWithRetry(
     if (error instanceof Error && error.message === 'TOKEN_EXPIRED') {
       // Invalidate token and retry once
       await invalidateToken(env);
-      const newToken = await getToken(env);
+      const newToken = (await getToken(env)).token;
       return await searchTrack(song, artist, newToken, storefront, albumName, duration);
     }
     throw error;
@@ -160,7 +160,7 @@ async function fetchAlbumWithRetry(
     if (error instanceof Error && error.message === 'TOKEN_EXPIRED') {
       // Invalidate token and retry once
       await invalidateToken(env);
-      const newToken = await getToken(env);
+      const newToken = (await getToken(env)).token;
       return await fetchAlbum(albumId, newToken, storefront);
     }
     throw error;
