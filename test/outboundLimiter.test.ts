@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { TokenBucket, UpstreamRateLimitedError, QueueTimeoutError } from '../src/outboundLimiter.ts';
+import { TokenBucket, UpstreamRateLimitedError, QueueTimeoutError, bucketForSource } from '../src/outboundLimiter.ts';
 
 describe('TokenBucket.refill', () => {
   test('does not overflow past capacity', () => {
@@ -99,6 +99,30 @@ describe('TokenBucket.msUntilNextToken', () => {
     b.tokens = 0;
     b.lastRefill = 1000;
     assert.equal(b.msUntilNextToken(2000), 0);
+  });
+});
+
+describe('bucketForSource', () => {
+  test('mint and scrape resolve to distinct bucket instances', () => {
+    assert.notEqual(bucketForSource('mint'), bucketForSource('scrape'));
+  });
+
+  test('the same source always resolves to the same bucket instance', () => {
+    assert.equal(bucketForSource('mint'), bucketForSource('mint'));
+    assert.equal(bucketForSource('scrape'), bucketForSource('scrape'));
+  });
+
+  test('mint bucket uses the boosted defaults when APPLE_MINT_* is unset', () => {
+    const mint = bucketForSource('mint');
+    assert.equal(mint.capacity, 200);
+    assert.equal(mint.refillPerSecond, 100);
+  });
+
+  test('draining the mint bucket does not affect the scrape bucket', () => {
+    const scrape = bucketForSource('scrape');
+    const scrapeBefore = scrape.tokens;
+    bucketForSource('mint').tokens = 0;
+    assert.equal(scrape.tokens, scrapeBefore);
   });
 });
 

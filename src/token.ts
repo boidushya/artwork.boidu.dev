@@ -5,35 +5,88 @@ import { log, Tag } from './logger';
 const TOKEN_CACHE_KEY = 'apple_music_token';
 const TOKEN_TTL_SECONDS = 3600;
 
+const AM_MINT_URL = process.env.AM_MINT_URL || 'https://am-mint.binimum.org/token';
+const MINT_TIMEOUT_MS = 5000;
+const MIN_TTL_SECONDS = 60;
+const MAX_TTL_SECONDS = 3600;
+
 const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const MINT_USER_AGENT = 'artwork.boidu.dev';
 
-export async function getToken(env?: Env): Promise<string> {
+export type TokenSource = 'mint' | 'scrape';
+export interface TokenResult {
+  token: string;
+  source: TokenSource;
+}
+
+export function clampTokenTtl(ttl: number): number {
+  if (!Number.isFinite(ttl)) return MIN_TTL_SECONDS;
+  return Math.max(MIN_TTL_SECONDS, Math.min(MAX_TTL_SECONDS, Math.floor(ttl)));
+}
+
+async function readCachedToken(env?: Env): Promise<TokenResult | null> {
+  const raw = env?.CACHE ? await env.CACHE.get(TOKEN_CACHE_KEY) : cache.get(TOKEN_CACHE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<TokenResult>;
+    if (typeof parsed.token === 'string' && (parsed.source === 'mint' || parsed.source === 'scrape')) {
+      return { token: parsed.token, source: parsed.source };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function writeCachedToken(
+  env: Env | undefined,
+  result: TokenResult,
+  ttlSeconds: number
+): Promise<void> {
+  const raw = JSON.stringify(result);
   if (env?.CACHE) {
-    const cached = await env.CACHE.get(TOKEN_CACHE_KEY);
-    if (cached) {
-      log.debug(Tag.TOKEN, 'cache hit (kv)');
-      return cached;
-    }
+    await env.CACHE.put(TOKEN_CACHE_KEY, raw, { expirationTtl: ttlSeconds });
   } else {
-    const cached = cache.get(TOKEN_CACHE_KEY);
-    if (cached) {
-      log.debug(Tag.TOKEN, 'cache hit (memory)');
-      return cached;
-    }
+    cache.set(TOKEN_CACHE_KEY, raw, ttlSeconds);
+  }
+}
+
+async function mintToken(): Promise<{ token: string; ttlSeconds: number }> {
+  const res = await fetch(AM_MINT_URL, {
+    signal: AbortSignal.timeout(MINT_TIMEOUT_MS),
+    headers: { Accept: 'application/json', 'User-Agent': MINT_USER_AGENT },
+  });
+  if (!res.ok) throw new Error(`mint failed: ${res.status}`);
+  const data = (await res.json()) as { token?: string; cache_ttl_seconds?: number };
+  if (!data.token) throw new Error('mint response missing token');
+  return { token: data.token, ttlSeconds: clampTokenTtl(data.cache_ttl_seconds ?? MIN_TTL_SECONDS) };
+}
+
+export async function getToken(env?: Env): Promise<TokenResult> {
+  const cached = await readCachedToken(env);
+  if (cached) {
+    log.debug(Tag.TOKEN, `cache hit (${env?.CACHE ? 'kv' : 'memory'})`, { source: cached.source });
+    return cached;
   }
 
-  log.info(Tag.TOKEN, 'cache miss — scraping fresh token');
-  const token = await scrapeToken();
-
-  if (env?.CACHE) {
-    await env.CACHE.put(TOKEN_CACHE_KEY, token, { expirationTtl: TOKEN_TTL_SECONDS });
-  } else {
-    cache.set(TOKEN_CACHE_KEY, token, TOKEN_TTL_SECONDS);
+  let result: TokenResult;
+  let ttlSeconds: number;
+  try {
+    const minted = await mintToken();
+    result = { token: minted.token, source: 'mint' };
+    ttlSeconds = minted.ttlSeconds;
+    log.info(Tag.TOKEN, 'token source=mint', { ttlSeconds, chars: minted.token.length });
+  } catch (err) {
+    log.warn(Tag.TOKEN, 'mint failed, falling back to scrape', err);
+    const token = await scrapeToken();
+    result = { token, source: 'scrape' };
+    ttlSeconds = TOKEN_TTL_SECONDS;
+    log.info(Tag.TOKEN, 'token source=scrape', { ttlSeconds, chars: token.length });
   }
-  log.info(Tag.TOKEN, 'cached', { ttlSeconds: TOKEN_TTL_SECONDS, chars: token.length });
 
-  return token;
+  await writeCachedToken(env, result, ttlSeconds);
+  return result;
 }
 
 async function scrapeToken(): Promise<string> {
