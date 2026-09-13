@@ -93,7 +93,7 @@ Configuration (all optional; unset means the feature is a no-op and every reques
 | `BLS_TOKEN_TTL_SEC` | `10800` | Token lifetime in seconds (3 hours). |
 | `BLS_TOKEN_EPOCH` | `1` | Bump to revoke every outstanding token immediately. |
 | `BLS_ALTCHA_HMAC` | unset | HMAC secret for signing proof-of-work challenges. Unset disables the mint gate. |
-| `BLS_POW_COST` | `5000` | Proof-of-work difficulty (PBKDF2 cost). Tune per target device. |
+| `BLS_POW_COST` | `5000` | Proof-of-work difficulty (PBKDF2 cost). Default solves in roughly 230ms median (450ms max) on modern hardware; raise server-side to increase abuse cost. |
 | `BLS_POW_TTL_MS` | `120000` | Challenge validity window in milliseconds. |
 | `APPLE_PRIORITY_RESERVE` | `2` | Outbound bucket tokens reserved for the priority tier. |
 | `APPLE_STANDARD_MAX_WAIT_MS` | `1500` | Max queue wait for standard traffic before it sheds. |
