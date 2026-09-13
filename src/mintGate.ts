@@ -55,12 +55,17 @@ export async function verifyPowSolution(payload: {
   solution: unknown;
 }): Promise<boolean> {
   if (!HMAC) return false;
-  const result = await verifySolution({
-    challenge: payload.challenge,
-    solution: payload.solution as Parameters<typeof verifySolution>[0]['solution'],
-    deriveKey,
-    hmacSignatureSecret: HMAC,
-  });
+  let result: Awaited<ReturnType<typeof verifySolution>>;
+  try {
+    result = await verifySolution({
+      challenge: payload.challenge,
+      solution: payload.solution as Parameters<typeof verifySolution>[0]['solution'],
+      deriveKey,
+      hmacSignatureSecret: HMAC,
+    });
+  } catch {
+    return false;
+  }
   if (!result.verified || result.expired) return false;
   const { signature } = payload.challenge;
   if (signature === undefined || guard.seen(signature)) return false;

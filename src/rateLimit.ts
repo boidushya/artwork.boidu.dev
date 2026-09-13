@@ -89,3 +89,16 @@ export const artworkRateLimit = rateLimiter({
     return c.json({ error: 'Rate limit exceeded' }, 429);
   },
 });
+
+const MINT_LIMIT = parseInt(process.env.MINT_RATE_LIMIT || '10', 10);
+
+export const mintRateLimit = rateLimiter({
+  windowMs: WINDOW_MS,
+  limit: MINT_LIMIT,
+  keyGenerator: (c) => resolveIp(c),
+  standardHeaders: 'draft-7',
+  handler: (c) => {
+    log.warn(Tag.RATELIMIT, 'mint rate limited', { ip: resolveIp(c) });
+    return c.json({ error: 'Rate limit exceeded' }, 429);
+  },
+});

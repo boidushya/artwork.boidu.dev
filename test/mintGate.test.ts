@@ -53,4 +53,12 @@ describe('verifyPowSolution', () => {
     const bad = { ...solution, counter: solution.counter + 1 };
     assert.equal(await verifyPowSolution({ challenge, solution: bad }), false);
   });
+
+  test('regression: malformed challenge or solution returns false, does not throw', async () => {
+    const malformed = {
+      challenge: { a: 1 } as unknown as Parameters<typeof verifyPowSolution>[0]['challenge'],
+      solution: { b: 2 },
+    };
+    assert.equal(await verifyPowSolution(malformed), false);
+  });
 });
