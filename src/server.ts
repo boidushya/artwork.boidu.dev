@@ -238,14 +238,14 @@ async function searchWithRetry(
 ) {
   const mut = tokenResult.source === 'scrape' ? MEDIA_USER_TOKEN : undefined;
   try {
-    return await searchTrack(song, artist, tokenResult.token, storefront, albumName, duration, mut);
+    return await searchTrack(song, artist, tokenResult.token, storefront, albumName, duration, mut, tokenResult.source);
   } catch (error) {
     if (error instanceof Error && error.message === 'TOKEN_EXPIRED') {
       log.warn(Tag.SEARCH, 'TOKEN_EXPIRED, retrying with fresh token');
       await invalidateToken();
       const fresh = await getToken();
       const freshMut = fresh.source === 'scrape' ? MEDIA_USER_TOKEN : undefined;
-      return await searchTrack(song, artist, fresh.token, storefront, albumName, duration, freshMut);
+      return await searchTrack(song, artist, fresh.token, storefront, albumName, duration, freshMut, fresh.source);
     }
     throw error;
   }
@@ -258,14 +258,14 @@ async function fetchAlbumWithRetry(
 ) {
   const mut = tokenResult.source === 'scrape' ? MEDIA_USER_TOKEN : undefined;
   try {
-    return await fetchAlbum(albumId, tokenResult.token, storefront, mut);
+    return await fetchAlbum(albumId, tokenResult.token, storefront, mut, tokenResult.source);
   } catch (error) {
     if (error instanceof Error && error.message === 'TOKEN_EXPIRED') {
       log.warn(Tag.ALBUM, 'TOKEN_EXPIRED, retrying with fresh token');
       await invalidateToken();
       const fresh = await getToken();
       const freshMut = fresh.source === 'scrape' ? MEDIA_USER_TOKEN : undefined;
-      return await fetchAlbum(albumId, fresh.token, storefront, freshMut);
+      return await fetchAlbum(albumId, fresh.token, storefront, freshMut, fresh.source);
     }
     throw error;
   }

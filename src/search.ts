@@ -1,4 +1,5 @@
 import type { AppleMusicSearchResponse, AppleMusicTrack, SearchResult } from './types';
+import type { TokenSource } from './token';
 import { log, Tag } from './logger';
 import { fetchAppleWithRetry, UpstreamRateLimitedError } from './outboundLimiter';
 
@@ -13,7 +14,8 @@ export async function searchTrack(
   storefront: string = 'vn',
   albumName?: string,
   duration?: number,
-  mut?: string
+  mut?: string,
+  source: TokenSource = 'scrape'
 ): Promise<SearchResult | null> {
   const query = `${song} ${artist}`.trim();
   const searchUrl = `${API_BASE}/catalog/${storefront}/search?term=${encodeURIComponent(query)}&types=songs&limit=10`;
@@ -29,7 +31,7 @@ export async function searchTrack(
 
   log.info(Tag.SEARCH, '→ apple', { storefront, query, mut: !!mut, albumName, duration });
   const start = Date.now();
-  const response = await fetchAppleWithRetry(searchUrl, { headers }, 'search', Tag.SEARCH);
+  const response = await fetchAppleWithRetry(searchUrl, { headers }, 'search', Tag.SEARCH, source);
   const ms = Date.now() - start;
 
   if (!response.ok) {

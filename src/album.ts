@@ -1,4 +1,5 @@
 import type { AppleMusicAlbumResponse, AppleMusicAlbum } from './types';
+import type { TokenSource } from './token';
 import { log, Tag } from './logger';
 import { fetchAppleWithRetry, UpstreamRateLimitedError } from './outboundLimiter';
 
@@ -17,7 +18,8 @@ export async function fetchAlbum(
   albumId: string,
   token: string,
   storefront: string = 'vn',
-  mut?: string
+  mut?: string,
+  source: TokenSource = 'scrape'
 ): Promise<AlbumData | null> {
   const url = `${API_BASE}/catalog/${storefront}/albums/${albumId}?extend=editorialVideo`;
 
@@ -32,7 +34,7 @@ export async function fetchAlbum(
 
   log.info(Tag.ALBUM, '→ apple', { storefront, albumId, mut: !!mut });
   const start = Date.now();
-  const response = await fetchAppleWithRetry(url, { headers }, 'album', Tag.ALBUM);
+  const response = await fetchAppleWithRetry(url, { headers }, 'album', Tag.ALBUM, source);
   const ms = Date.now() - start;
 
   if (!response.ok) {

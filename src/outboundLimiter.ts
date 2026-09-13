@@ -1,7 +1,10 @@
 import { log, Tag } from './logger';
+import type { TokenSource } from './token';
 
-const BURST = parseInt(process.env.APPLE_BURST || '200', 10);
-const RATE_PER_SEC = parseFloat(process.env.APPLE_RATE || '100');
+const SCRAPE_BURST = parseInt(process.env.APPLE_BURST || '5', 10);
+const SCRAPE_RATE_PER_SEC = parseFloat(process.env.APPLE_RATE || '1');
+const MINT_BURST = parseInt(process.env.APPLE_MINT_BURST || '200', 10);
+const MINT_RATE_PER_SEC = parseFloat(process.env.APPLE_MINT_RATE || '100');
 const RETRY_ATTEMPTS = parseInt(process.env.APPLE_RETRY_ATTEMPTS || '3', 10);
 const RETRY_BASE_MS = parseInt(process.env.APPLE_RETRY_BASE_MS || '500', 10);
 const MAX_QUEUE_WAIT_MS = parseInt(process.env.APPLE_MAX_QUEUE_WAIT_MS || '10000', 10);
@@ -145,7 +148,12 @@ export class TokenBucket {
   }
 }
 
-const appleBucket = new TokenBucket(BURST, RATE_PER_SEC);
+const scrapeBucket = new TokenBucket(SCRAPE_BURST, SCRAPE_RATE_PER_SEC);
+const mintBucket = new TokenBucket(MINT_BURST, MINT_RATE_PER_SEC);
+
+export function bucketForSource(source: TokenSource): TokenBucket {
+  return source === 'mint' ? mintBucket : scrapeBucket;
+}
 
 export class QueueTimeoutError extends Error {
   constructor(public readonly waitedMs: number) {
@@ -154,17 +162,21 @@ export class QueueTimeoutError extends Error {
   }
 }
 
-export async function acquireAppleSlot(maxWaitMs = MAX_QUEUE_WAIT_MS): Promise<number> {
+export async function acquireAppleSlot(
+  source: TokenSource,
+  maxWaitMs = MAX_QUEUE_WAIT_MS
+): Promise<number> {
+  const bucket = bucketForSource(source);
   const start = Date.now();
   while (true) {
-    if (appleBucket.tryConsume()) {
+    if (bucket.tryConsume()) {
       return Date.now() - start;
     }
     const waited = Date.now() - start;
     if (waited >= maxWaitMs) {
       throw new QueueTimeoutError(waited);
     }
-    const tokenWaitMs = appleBucket.msUntilNextToken();
+    const tokenWaitMs = bucket.msUntilNextToken();
     const sleepMs = Math.min(tokenWaitMs, maxWaitMs - waited);
     await new Promise<void>((r) => setTimeout(r, sleepMs));
   }
@@ -174,18 +186,20 @@ export async function fetchAppleWithRetry(
   url: string,
   init: RequestInit,
   endpoint: AppleEndpoint,
-  tag: string
+  tag: string,
+  source: TokenSource
 ): Promise<Response> {
   circuitBreaker.check(endpoint);
 
   for (let attempt = 0; ; attempt++) {
     let waited: number;
     try {
-      waited = await acquireAppleSlot();
+      waited = await acquireAppleSlot(source);
     } catch (err) {
       if (err instanceof QueueTimeoutError) {
         log.warn(Tag.RATELIMIT, 'queue timeout — failing fast', {
           endpoint,
+          source,
           waitedMs: err.waitedMs,
           maxWaitMs: MAX_QUEUE_WAIT_MS,
         });
@@ -194,9 +208,9 @@ export async function fetchAppleWithRetry(
       throw err;
     }
     if (waited > 2000) {
-      log.warn(Tag.RATELIMIT, 'throttle wait', { endpoint, waitedMs: waited });
+      log.warn(Tag.RATELIMIT, 'throttle wait', { endpoint, source, waitedMs: waited });
     } else if (waited > 50) {
-      log.info(Tag.RATELIMIT, 'throttle wait', { endpoint, waitedMs: waited });
+      log.info(Tag.RATELIMIT, 'throttle wait', { endpoint, source, waitedMs: waited });
     }
     const res = await fetch(url, init);
 
@@ -229,10 +243,14 @@ export function getCircuitState(endpoint: AppleEndpoint) {
 // TODO: wire into a /metrics or /health endpoint. Calls refill() first so the
 // returned token count reflects the current state, not the last consume.
 export function getBucketStats() {
-  appleBucket.refill();
+  return { mint: statsFor(mintBucket), scrape: statsFor(scrapeBucket) };
+}
+
+function statsFor(bucket: TokenBucket) {
+  bucket.refill();
   return {
-    tokens: Math.floor(appleBucket.tokens),
-    capacity: appleBucket.capacity,
-    refillPerSecond: appleBucket.refillPerSecond,
+    tokens: Math.floor(bucket.tokens),
+    capacity: bucket.capacity,
+    refillPerSecond: bucket.refillPerSecond,
   };
 }
