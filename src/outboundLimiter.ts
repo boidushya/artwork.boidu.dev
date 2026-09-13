@@ -1,5 +1,6 @@
 import { log, Tag } from './logger';
 import type { TokenSource } from './token';
+import type { Tier } from './priority';
 
 const SCRAPE_BURST = parseInt(process.env.APPLE_BURST || '5', 10);
 const SCRAPE_RATE_PER_SEC = parseFloat(process.env.APPLE_RATE || '1');
@@ -12,6 +13,8 @@ const CIRCUIT_THRESHOLD = parseInt(process.env.APPLE_CIRCUIT_THRESHOLD || '3', 1
 const CIRCUIT_BASE_OPEN_MS = parseInt(process.env.APPLE_CIRCUIT_BASE_OPEN_MS || '300000', 10);
 const CIRCUIT_MAX_OPEN_MS = parseInt(process.env.APPLE_CIRCUIT_MAX_OPEN_MS || '14400000', 10);
 const CIRCUIT_MULTIPLIER = parseFloat(process.env.APPLE_CIRCUIT_MULTIPLIER || '4');
+const PRIORITY_RESERVE = parseInt(process.env.APPLE_PRIORITY_RESERVE || '2', 10);
+const STANDARD_MAX_QUEUE_WAIT_MS = parseInt(process.env.APPLE_STANDARD_MAX_WAIT_MS || '1500', 10);
 
 export type AppleEndpoint = 'search' | 'album';
 
@@ -132,19 +135,20 @@ export class TokenBucket {
     this.lastRefill = now;
   }
 
-  tryConsume(now = Date.now()): boolean {
+  tryConsume(now = Date.now(), reserve = 0): boolean {
     this.refill(now);
-    if (this.tokens >= 1) {
+    if (this.tokens >= 1 + reserve) {
       this.tokens -= 1;
       return true;
     }
     return false;
   }
 
-  msUntilNextToken(now = Date.now()): number {
+  msUntilNextToken(now = Date.now(), reserve = 0): number {
     this.refill(now);
-    if (this.tokens >= 1) return 0;
-    return Math.ceil(((1 - this.tokens) * 1000) / this.refillPerSecond);
+    const need = 1 + reserve;
+    if (this.tokens >= need) return 0;
+    return Math.ceil(((need - this.tokens) * 1000) / this.refillPerSecond);
   }
 }
 
@@ -164,20 +168,23 @@ export class QueueTimeoutError extends Error {
 
 export async function acquireAppleSlot(
   source: TokenSource,
-  maxWaitMs = MAX_QUEUE_WAIT_MS
+  tier: Tier,
+  maxWaitMs?: number
 ): Promise<number> {
   const bucket = bucketForSource(source);
+  const reserve = tier === 'standard' ? PRIORITY_RESERVE : 0;
+  const cap = maxWaitMs ?? (tier === 'standard' ? STANDARD_MAX_QUEUE_WAIT_MS : MAX_QUEUE_WAIT_MS);
   const start = Date.now();
   while (true) {
-    if (bucket.tryConsume()) {
+    if (bucket.tryConsume(Date.now(), reserve)) {
       return Date.now() - start;
     }
     const waited = Date.now() - start;
-    if (waited >= maxWaitMs) {
+    if (waited >= cap) {
       throw new QueueTimeoutError(waited);
     }
-    const tokenWaitMs = bucket.msUntilNextToken();
-    const sleepMs = Math.min(tokenWaitMs, maxWaitMs - waited);
+    const tokenWaitMs = bucket.msUntilNextToken(Date.now(), reserve);
+    const sleepMs = Math.min(tokenWaitMs, cap - waited);
     await new Promise<void>((r) => setTimeout(r, sleepMs));
   }
 }
@@ -187,14 +194,15 @@ export async function fetchAppleWithRetry(
   init: RequestInit,
   endpoint: AppleEndpoint,
   tag: string,
-  source: TokenSource
+  source: TokenSource,
+  tier: Tier
 ): Promise<Response> {
   circuitBreaker.check(endpoint);
 
   for (let attempt = 0; ; attempt++) {
     let waited: number;
     try {
-      waited = await acquireAppleSlot(source);
+      waited = await acquireAppleSlot(source, tier);
     } catch (err) {
       if (err instanceof QueueTimeoutError) {
         log.warn(Tag.RATELIMIT, 'queue timeout — failing fast', {

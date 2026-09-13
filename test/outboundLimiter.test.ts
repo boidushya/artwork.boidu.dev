@@ -156,3 +156,35 @@ describe('QueueTimeoutError', () => {
   });
 });
 
+describe('TokenBucket reserve (tier-aware)', () => {
+  test('reserve 0 consumes down to the last token', () => {
+    const b = new TokenBucket(3, 1, 1000);
+    assert.equal(b.tryConsume(1000, 0), true);
+    assert.equal(b.tryConsume(1000, 0), true);
+    assert.equal(b.tryConsume(1000, 0), true);
+    assert.equal(b.tryConsume(1000, 0), false);
+  });
+
+  test('reserve leaves that many tokens unconsumed', () => {
+    const b = new TokenBucket(3, 1, 1000);
+    assert.equal(b.tryConsume(1000, 2), true);
+    assert.equal(b.tryConsume(1000, 2), false);
+    assert.equal(b.tokens, 2, 'reserve of 2 stays for priority');
+  });
+
+  test('priority can still take reserved tokens after standard is blocked', () => {
+    const b = new TokenBucket(3, 1, 1000);
+    b.tryConsume(1000, 2);
+    assert.equal(b.tryConsume(1000, 2), false);
+    assert.equal(b.tryConsume(1000, 0), true);
+    assert.equal(b.tryConsume(1000, 0), true);
+  });
+
+  test('msUntilNextToken accounts for reserve', () => {
+    const b = new TokenBucket(5, 1, 1000);
+    b.tokens = 2;
+    assert.equal(b.msUntilNextToken(1000, 0), 0, 'has a token now');
+    assert.equal(b.msUntilNextToken(1000, 2), 1000, 'needs 1 more to clear reserve');
+  });
+});
+
