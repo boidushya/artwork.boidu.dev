@@ -1,7 +1,7 @@
 import { log, Tag } from './logger';
 
-const BURST = parseInt(process.env.APPLE_BURST || '5', 10);
-const RATE_PER_SEC = parseFloat(process.env.APPLE_RATE || '1');
+const BURST = parseInt(process.env.APPLE_BURST || '200', 10);
+const RATE_PER_SEC = parseFloat(process.env.APPLE_RATE || '100');
 const RETRY_ATTEMPTS = parseInt(process.env.APPLE_RETRY_ATTEMPTS || '3', 10);
 const RETRY_BASE_MS = parseInt(process.env.APPLE_RETRY_BASE_MS || '500', 10);
 const MAX_QUEUE_WAIT_MS = parseInt(process.env.APPLE_MAX_QUEUE_WAIT_MS || '10000', 10);
