@@ -12,6 +12,7 @@ const MAX_TTL_SECONDS = 3600;
 
 const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const MINT_USER_AGENT = 'artwork.boidu.dev';
 
 export type TokenSource = 'mint' | 'scrape';
 export interface TokenResult {
@@ -54,7 +55,7 @@ async function writeCachedToken(
 async function mintToken(): Promise<{ token: string; ttlSeconds: number }> {
   const res = await fetch(AM_MINT_URL, {
     signal: AbortSignal.timeout(MINT_TIMEOUT_MS),
-    headers: { Accept: 'application/json' },
+    headers: { Accept: 'application/json', 'User-Agent': MINT_USER_AGENT },
   });
   if (!res.ok) throw new Error(`mint failed: ${res.status}`);
   const data = (await res.json()) as { token?: string; cache_ttl_seconds?: number };
