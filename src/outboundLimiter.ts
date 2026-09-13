@@ -15,6 +15,7 @@ const CIRCUIT_MAX_OPEN_MS = parseInt(process.env.APPLE_CIRCUIT_MAX_OPEN_MS || '1
 const CIRCUIT_MULTIPLIER = parseFloat(process.env.APPLE_CIRCUIT_MULTIPLIER || '4');
 const PRIORITY_RESERVE = parseInt(process.env.APPLE_PRIORITY_RESERVE || '2', 10);
 const STANDARD_MAX_QUEUE_WAIT_MS = parseInt(process.env.APPLE_STANDARD_MAX_WAIT_MS || '1500', 10);
+const PRIORITY_ACTIVE_WINDOW_MS = parseInt(process.env.APPLE_PRIORITY_WINDOW_MS || '5000', 10);
 
 export type AppleEndpoint = 'search' | 'album';
 
@@ -166,13 +167,21 @@ export class QueueTimeoutError extends Error {
   }
 }
 
+export function reserveFor(tier: Tier, priorityActive: boolean, reserve = PRIORITY_RESERVE): number {
+  return tier === 'standard' && priorityActive ? reserve : 0;
+}
+
+let lastPriorityAt = 0;
+
 export async function acquireAppleSlot(
   source: TokenSource,
   tier: Tier,
   maxWaitMs?: number
 ): Promise<number> {
   const bucket = bucketForSource(source);
-  const reserve = tier === 'standard' ? PRIORITY_RESERVE : 0;
+  if (tier === 'priority') lastPriorityAt = Date.now();
+  const priorityActive = Date.now() - lastPriorityAt < PRIORITY_ACTIVE_WINDOW_MS;
+  const reserve = reserveFor(tier, priorityActive);
   const cap = maxWaitMs ?? (tier === 'standard' ? STANDARD_MAX_QUEUE_WAIT_MS : MAX_QUEUE_WAIT_MS);
   const start = Date.now();
   while (true) {

@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { TokenBucket, UpstreamRateLimitedError, QueueTimeoutError, bucketForSource } from '../src/outboundLimiter.ts';
+import { TokenBucket, UpstreamRateLimitedError, QueueTimeoutError, bucketForSource, reserveFor } from '../src/outboundLimiter.ts';
 
 describe('TokenBucket.refill', () => {
   test('does not overflow past capacity', () => {
@@ -185,6 +185,18 @@ describe('TokenBucket reserve (tier-aware)', () => {
     b.tokens = 2;
     assert.equal(b.msUntilNextToken(1000, 0), 0, 'has a token now');
     assert.equal(b.msUntilNextToken(1000, 2), 1000, 'needs 1 more to clear reserve');
+  });
+});
+
+describe('reserveFor', () => {
+  test('standard reserves only when priority is active', () => {
+    assert.equal(reserveFor('standard', true, 2), 2);
+    assert.equal(reserveFor('standard', false, 2), 0, 'no reserve when no priority demand');
+  });
+
+  test('priority never reserves against itself', () => {
+    assert.equal(reserveFor('priority', true, 2), 0);
+    assert.equal(reserveFor('priority', false, 2), 0);
   });
 });
 

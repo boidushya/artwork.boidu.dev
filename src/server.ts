@@ -36,6 +36,14 @@ try {
 
 const app = new Hono();
 
+if (gatingEnabled() !== mintGateEnabled()) {
+  log.warn(Tag.SERVER, 'priority gating half-configured: set both BLS_JWT_SECRET and BLS_ALTCHA_HMAC or neither; gating stays off');
+}
+
+function priorityEnabled(): boolean {
+  return gatingEnabled() && mintGateEnabled();
+}
+
 app.use('*', cors({
   origin: '*',
   allowMethods: ['GET', 'POST', 'OPTIONS'],
@@ -63,13 +71,13 @@ app.use('*', artworkRateLimit);
 app.get('/health', (c) => c.json({ status: 'ok' }));
 
 app.get('/challenge', mintRateLimit, async (c) => {
-  if (!mintGateEnabled()) return c.json({ error: 'Not found' }, 404);
+  if (!priorityEnabled()) return c.json({ error: 'Not found' }, 404);
   const challenge = await createPowChallenge();
   return c.json(challenge);
 });
 
 app.post('/mint', mintRateLimit, async (c) => {
-  if (!mintGateEnabled() || !gatingEnabled()) return c.json({ error: 'Not found' }, 404);
+  if (!priorityEnabled()) return c.json({ error: 'Not found' }, 404);
   let body: { challenge?: unknown; solution?: unknown };
   try {
     body = await c.req.json();
@@ -92,7 +100,7 @@ app.get('/artwork', handleArtwork);
 
 async function handleArtwork(c: any): Promise<Response> {
   try {
-    const tier = resolveTier(c.req.header('authorization') ?? null);
+    const tier = priorityEnabled() ? resolveTier(c.req.header('authorization') ?? null) : 'priority';
     const result = await handleArtworkRequest(c.req.url, tier);
     return c.json(result);
   } catch (error) {

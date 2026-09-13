@@ -76,7 +76,7 @@ npm run dev
 
 ## Priority gating (optional)
 
-Better-lyrics-shaders traffic can win scarce Apple upstream capacity under load. A client mints a short-lived token and sends it as `Authorization: Bearer <token>`; token holders get the priority tier, everyone else keeps normal service and only sheds first when the outbound limiter is near Apple's quota. No consumer is ever blocked.
+Better-lyrics-shaders traffic can win scarce Apple upstream capacity under load. A client mints a short-lived token and sends it as `Authorization: Bearer <token>`; token holders get the priority tier. When priority traffic is competing near Apple's quota, standard traffic sheds first (HTTP 503, safe to retry); when no priority traffic is present, standard uses the full capacity. Standard traffic is never forced into cache-only mode, and gating is a no-op until it is configured.
 
 Two endpoints support minting:
 
@@ -97,4 +97,5 @@ Configuration (all optional; unset means the feature is a no-op and every reques
 | `BLS_POW_TTL_MS` | `120000` | Challenge validity window in milliseconds. |
 | `APPLE_PRIORITY_RESERVE` | `2` | Outbound bucket tokens reserved for the priority tier. |
 | `APPLE_STANDARD_MAX_WAIT_MS` | `1500` | Max queue wait for standard traffic before it sheds. |
+| `APPLE_PRIORITY_WINDOW_MS` | `5000` | How long after a priority request standard keeps yielding the reserve. |
 | `MINT_RATE_LIMIT` | `10` | Per-IP request limit for `/challenge` and `/mint`. |
