@@ -10,10 +10,11 @@
     "build": "tsc --noEmit && esbuild src/server.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/server.js --packages=external --sourcemap",
     "start": "node dist/server.js",
     "dev:railway": "tsx watch src/server.ts",
-    "test": "APPLE_RATE=10000 APPLE_BURST=10000 APPLE_CIRCUIT_THRESHOLD=99999 node --import tsx --test 'test/**/*.test.ts'"
+    "test": "APPLE_RATE=10000 APPLE_BURST=10000 APPLE_CIRCUIT_THRESHOLD=99999 BLS_ALTCHA_HMAC=test-altcha-secret node --import tsx --test 'test/**/*.test.ts'"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",
+    "altcha-lib": "^2.5.0",
     "hono": "^4.6.0",
     "hono-rate-limiter": "^0.5.3",
     "pg": "^8.20.0"

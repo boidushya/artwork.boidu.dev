@@ -13,9 +13,12 @@ import {
   getAlbumCache,
   upsertAlbumCache,
 } from './resultCache';
-import { artworkRateLimit } from './rateLimit';
+import { artworkRateLimit, mintRateLimit } from './rateLimit';
 import { UpstreamRateLimitedError } from './outboundLimiter';
 import type { TokenResult } from './token';
+import { resolveTier, mintToken, gatingEnabled } from './priority';
+import type { Tier } from './priority';
+import { createPowChallenge, verifyPowSolution, mintGateEnabled } from './mintGate';
 import { log, Tag } from './logger';
 
 const MEDIA_USER_TOKEN = process.env.MEDIA_USER_TOKEN;
@@ -33,7 +36,20 @@ try {
 
 const app = new Hono();
 
-app.use('*', cors());
+if (gatingEnabled() !== mintGateEnabled()) {
+  log.warn(Tag.SERVER, 'priority gating half-configured: set both BLS_JWT_SECRET and BLS_ALTCHA_HMAC or neither; gating stays off');
+}
+
+function priorityEnabled(): boolean {
+  return gatingEnabled() && mintGateEnabled();
+}
+
+app.use('*', cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  maxAge: 86400,
+}));
 
 app.use('*', async (c, next) => {
   const start = Date.now();
@@ -54,12 +70,38 @@ app.use('*', artworkRateLimit);
 
 app.get('/health', (c) => c.json({ status: 'ok' }));
 
+app.get('/challenge', mintRateLimit, async (c) => {
+  if (!priorityEnabled()) return c.json({ error: 'Not found' }, 404);
+  const challenge = await createPowChallenge();
+  return c.json(challenge);
+});
+
+app.post('/mint', mintRateLimit, async (c) => {
+  if (!priorityEnabled()) return c.json({ error: 'Not found' }, 404);
+  let body: { challenge?: unknown; solution?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid body' }, 400);
+  }
+  if (!body.challenge || !body.solution) {
+    return c.json({ error: 'Missing challenge or solution' }, 400);
+  }
+  const ok = await verifyPowSolution({
+    challenge: body.challenge as Parameters<typeof verifyPowSolution>[0]['challenge'],
+    solution: body.solution,
+  });
+  if (!ok) return c.json({ error: 'Invalid solution' }, 401);
+  return c.json({ token: mintToken() });
+});
+
 app.get('/', handleArtwork);
 app.get('/artwork', handleArtwork);
 
 async function handleArtwork(c: any): Promise<Response> {
   try {
-    const result = await handleArtworkRequest(c.req.url);
+    const tier = priorityEnabled() ? resolveTier(c.req.header('authorization') ?? null) : 'priority';
+    const result = await handleArtworkRequest(c.req.url, tier);
     return c.json(result);
   } catch (error) {
     if (error instanceof UpstreamRateLimitedError) {
@@ -73,7 +115,8 @@ async function handleArtwork(c: any): Promise<Response> {
 }
 
 async function handleArtworkRequest(
-  requestUrl: string
+  requestUrl: string,
+  tier: Tier
 ): Promise<ArtworkResponse | ErrorResponse> {
   const url = new URL(requestUrl);
   const song = url.searchParams.get('s') || url.searchParams.get('song');
@@ -119,7 +162,7 @@ async function handleArtworkRequest(
         return { error: 'Failed to authenticate with Apple Music' };
       }
       try {
-        const searchResult = await searchWithRetry(song, artist, tokenResult, storefront, albumName, duration);
+        const searchResult = await searchWithRetry(song, artist, tokenResult, storefront, albumName, duration, tier);
         if (!searchResult) {
           await upsertSearchIndex(
             { storefront, song, artist, albumName, duration },
@@ -172,7 +215,7 @@ async function handleArtworkRequest(
   }
 
   try {
-    const albumData = await fetchAlbumWithRetry(resolvedAlbumId, tokenResult, storefront);
+    const albumData = await fetchAlbumWithRetry(resolvedAlbumId, tokenResult, storefront, tier);
     if (!albumData) {
       await upsertAlbumCache({
         storefront,
@@ -233,19 +276,20 @@ async function searchWithRetry(
   artist: string,
   tokenResult: TokenResult,
   storefront: string,
-  albumName?: string,
-  duration?: number
+  albumName: string | undefined,
+  duration: number | undefined,
+  tier: Tier
 ) {
   const mut = tokenResult.source === 'scrape' ? MEDIA_USER_TOKEN : undefined;
   try {
-    return await searchTrack(song, artist, tokenResult.token, storefront, albumName, duration, mut, tokenResult.source);
+    return await searchTrack(song, artist, tokenResult.token, storefront, albumName, duration, mut, tokenResult.source, tier);
   } catch (error) {
     if (error instanceof Error && error.message === 'TOKEN_EXPIRED') {
       log.warn(Tag.SEARCH, 'TOKEN_EXPIRED, retrying with fresh token');
       await invalidateToken();
       const fresh = await getToken();
       const freshMut = fresh.source === 'scrape' ? MEDIA_USER_TOKEN : undefined;
-      return await searchTrack(song, artist, fresh.token, storefront, albumName, duration, freshMut, fresh.source);
+      return await searchTrack(song, artist, fresh.token, storefront, albumName, duration, freshMut, fresh.source, tier);
     }
     throw error;
   }
@@ -254,18 +298,19 @@ async function searchWithRetry(
 async function fetchAlbumWithRetry(
   albumId: string,
   tokenResult: TokenResult,
-  storefront: string
+  storefront: string,
+  tier: Tier
 ) {
   const mut = tokenResult.source === 'scrape' ? MEDIA_USER_TOKEN : undefined;
   try {
-    return await fetchAlbum(albumId, tokenResult.token, storefront, mut, tokenResult.source);
+    return await fetchAlbum(albumId, tokenResult.token, storefront, mut, tokenResult.source, tier);
   } catch (error) {
     if (error instanceof Error && error.message === 'TOKEN_EXPIRED') {
       log.warn(Tag.ALBUM, 'TOKEN_EXPIRED, retrying with fresh token');
       await invalidateToken();
       const fresh = await getToken();
       const freshMut = fresh.source === 'scrape' ? MEDIA_USER_TOKEN : undefined;
-      return await fetchAlbum(albumId, fresh.token, storefront, freshMut, fresh.source);
+      return await fetchAlbum(albumId, fresh.token, storefront, freshMut, fresh.source, tier);
     }
     throw error;
   }

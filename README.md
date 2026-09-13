@@ -73,3 +73,29 @@ npm run dev
 | `id` | - | Direct album ID |
 | `url` | - | Full album URL |
 | `storefront` | - | Country code (default: `us`) |
+
+## Priority gating (optional)
+
+Better-lyrics-shaders traffic can win scarce Apple upstream capacity under load. A client mints a short-lived token and sends it as `Authorization: Bearer <token>`; token holders get the priority tier. When priority traffic is competing near Apple's quota, standard traffic sheds first (HTTP 503, safe to retry); when no priority traffic is present, standard uses the full capacity. Standard traffic is never forced into cache-only mode, and gating is a no-op until it is configured.
+
+Two endpoints support minting:
+
+```
+GET  /challenge   returns a proof-of-work challenge (404 when the gate is disabled)
+POST /mint        body { challenge, solution } -> { token } (401 on invalid, 404 when disabled)
+```
+
+Configuration (all optional; unset means the feature is a no-op and every request is priority):
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `BLS_JWT_SECRET` | unset | HMAC signing key for the token. Unset disables gating (all traffic priority). |
+| `BLS_TOKEN_TTL_SEC` | `10800` | Token lifetime in seconds (3 hours). |
+| `BLS_TOKEN_EPOCH` | `1` | Bump to revoke every outstanding token immediately. |
+| `BLS_ALTCHA_HMAC` | unset | HMAC secret for signing proof-of-work challenges. Unset disables the mint gate. |
+| `BLS_POW_COST` | `5000` | Proof-of-work difficulty (PBKDF2 cost). Default solves in roughly 230ms median (450ms max) on modern hardware; raise server-side to increase abuse cost. |
+| `BLS_POW_TTL_MS` | `120000` | Challenge validity window in milliseconds. |
+| `APPLE_PRIORITY_RESERVE` | `2` | Outbound bucket tokens reserved for the priority tier. |
+| `APPLE_STANDARD_MAX_WAIT_MS` | `1500` | Max queue wait for standard traffic before it sheds. |
+| `APPLE_PRIORITY_WINDOW_MS` | `5000` | How long after a priority request standard keeps yielding the reserve. |
+| `MINT_RATE_LIMIT` | `10` | Per-IP request limit for `/challenge` and `/mint`. |
