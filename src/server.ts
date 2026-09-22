@@ -123,7 +123,6 @@ async function handleArtworkRequest(
   const artist = url.searchParams.get('a') || url.searchParams.get('artist');
   const albumIdParam = url.searchParams.get('id');
   const appleUrl = url.searchParams.get('url');
-  const storefrontParam = url.searchParams.get('storefront');
   const albumName =
     url.searchParams.get('al') || url.searchParams.get('albumName') || undefined;
   const durationParam = url.searchParams.get('d') || url.searchParams.get('duration');
@@ -135,7 +134,7 @@ async function handleArtworkRequest(
   } catch (error) {
     log.error(Tag.TOKEN, 'failed to get token', error);
   }
-  const storefront = storefrontParam || tokenResult?.storefront || 'vn';
+  const storefront = tokenResult?.storefront || 'vn';
 
   let resolvedAlbumId: string | null = null;
   let trackName: string | null = null;
