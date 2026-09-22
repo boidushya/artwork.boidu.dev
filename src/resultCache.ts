@@ -1,6 +1,7 @@
 import { query } from './db';
 import { normalize } from './search';
 import { log, Tag } from './logger';
+import type { ArtworkResponse } from './types';
 
 const DAY = 86400;
 const SEARCH_POSITIVE_TTL = 30 * DAY;
@@ -118,6 +119,35 @@ export async function upsertSearchIndex(
   });
 }
 
+export async function getSearchIndexAnywhere(
+  k: SearchKey,
+  opts?: { includeExpired?: boolean }
+): Promise<{ albumId: string; trackName: string | null; trackArtist: string | null } | null> {
+  const [, song, artist, album, duration] = buildSearchKey(k);
+  const freshness = opts?.includeExpired ? '' : 'AND expires_at > now()';
+  const result = await query<{
+    album_id: string;
+    track_name: string | null;
+    track_artist: string | null;
+  }>(
+    `SELECT album_id, track_name, track_artist
+     FROM search_index
+     WHERE song = $1 AND artist = $2 AND album = $3 AND duration = $4
+       AND album_id IS NOT NULL ${freshness}
+     ORDER BY expires_at DESC
+     LIMIT 1`,
+    [song, artist, album, duration]
+  );
+  if (!result || result.rows.length === 0) return null;
+  const row = result.rows[0];
+  log.info(Tag.CACHE_HIT, 'search_index cross-storefront', {
+    key: `${song}|${artist}|${album}|${duration}`,
+    albumId: row.album_id,
+    stale: !!opts?.includeExpired,
+  });
+  return { albumId: row.album_id, trackName: row.track_name, trackArtist: row.track_artist };
+}
+
 export async function getAlbumCache(
   storefront: string,
   albumId: string
@@ -164,6 +194,70 @@ export async function getAlbumCache(
     status: mapped.notFound ? 'NOT_FOUND' : mapped.hasAnimated ? (mapped.videoUrl ? 'ANIMATED' : 'ANIMATED_NO_VIDEO') : 'NO_ANIMATED',
   });
   return mapped;
+}
+
+export async function getAlbumByIdAnywhere(
+  albumId: string,
+  opts?: { includeExpired?: boolean }
+): Promise<AlbumCacheRow | null> {
+  const freshness = opts?.includeExpired ? '' : 'AND expires_at > now()';
+  const result = await query<{
+    storefront: string;
+    name: string | null;
+    artist: string | null;
+    static_url: string | null;
+    animated_url: string | null;
+    animated_vertical_url: string | null;
+    video_url: string | null;
+    video_vertical_url: string | null;
+    has_animated: boolean;
+    recheck_count: number;
+  }>(
+    `SELECT storefront, name, artist, static_url, animated_url, animated_vertical_url, video_url, video_vertical_url, has_animated, recheck_count
+     FROM album_cache
+     WHERE album_id = $1 AND not_found = FALSE ${freshness}
+     ORDER BY has_animated DESC, expires_at DESC
+     LIMIT 1`,
+    [albumId]
+  );
+  if (!result || result.rows.length === 0) return null;
+  const row = result.rows[0];
+  log.info(Tag.CACHE_HIT, 'album_cache cross-storefront', {
+    storefront: row.storefront,
+    albumId,
+    stale: !!opts?.includeExpired,
+  });
+  return {
+    storefront: row.storefront,
+    albumId,
+    name: row.name,
+    artist: row.artist,
+    staticUrl: row.static_url,
+    animatedUrl: row.animated_url,
+    animatedVerticalUrl: row.animated_vertical_url,
+    videoUrl: row.video_url,
+    videoVerticalUrl: row.video_vertical_url,
+    hasAnimated: row.has_animated,
+    notFound: false,
+    recheckCount: row.recheck_count,
+  };
+}
+
+export function albumRowToResponse(
+  row: AlbumCacheRow,
+  trackName?: string | null,
+  trackArtist?: string | null
+): ArtworkResponse {
+  return {
+    name: trackName || row.name || '',
+    artist: trackArtist || row.artist || '',
+    albumId: row.albumId,
+    static: row.staticUrl || '',
+    animated: row.animatedUrl,
+    animatedVertical: row.animatedVerticalUrl,
+    videoUrl: row.videoUrl,
+    videoUrlVertical: row.videoVerticalUrl,
+  };
 }
 
 export function computeAlbumTtl(row: Pick<AlbumCacheRow, 'notFound' | 'hasAnimated' | 'videoUrl'>, recheckCount = 0): number {

@@ -9,8 +9,11 @@ import { resolveVideoUrl } from './m3u8';
 import { runMigrations } from './db';
 import {
   getSearchIndex,
+  getSearchIndexAnywhere,
   upsertSearchIndex,
   getAlbumCache,
+  getAlbumByIdAnywhere,
+  albumRowToResponse,
   upsertAlbumCache,
 } from './resultCache';
 import { artworkRateLimit, mintRateLimit } from './rateLimit';
@@ -161,29 +164,42 @@ async function handleArtworkRequest(
       trackName = cachedSearch.trackName;
       trackArtist = cachedSearch.trackArtist;
     } else {
-      if (!tokenResult) {
+      const crossSearch = await getSearchIndexAnywhere({ storefront, song, artist, albumName, duration });
+      if (crossSearch) {
+        resolvedAlbumId = crossSearch.albumId;
+        trackName = crossSearch.trackName;
+        trackArtist = crossSearch.trackArtist;
+      } else if (!tokenResult) {
         return { error: 'Failed to authenticate with Apple Music' };
-      }
-      try {
-        const searchResult = await searchWithRetry(song, artist, tokenResult, storefront, albumName, duration, tier);
-        if (!searchResult) {
+      } else {
+        try {
+          const searchResult = await searchWithRetry(song, artist, tokenResult, storefront, albumName, duration, tier);
+          if (!searchResult) {
+            await upsertSearchIndex(
+              { storefront, song, artist, albumName, duration },
+              { albumId: null, trackName: null, trackArtist: null }
+            );
+            return { error: 'No matching tracks found' };
+          }
+          resolvedAlbumId = searchResult.albumId;
+          trackName = searchResult.track.attributes.name;
+          trackArtist = searchResult.track.attributes.artistName;
           await upsertSearchIndex(
             { storefront, song, artist, albumName, duration },
-            { albumId: null, trackName: null, trackArtist: null }
+            { albumId: resolvedAlbumId, trackName, trackArtist }
           );
-          return { error: 'No matching tracks found' };
+        } catch (error) {
+          if (error instanceof UpstreamRateLimitedError) {
+            const stale = await getSearchIndexAnywhere({ storefront, song, artist, albumName, duration }, { includeExpired: true });
+            if (!stale) throw error;
+            resolvedAlbumId = stale.albumId;
+            trackName = stale.trackName;
+            trackArtist = stale.trackArtist;
+          } else {
+            log.error(Tag.SEARCH, 'search failed', error);
+            return { error: 'Search failed' };
+          }
         }
-        resolvedAlbumId = searchResult.albumId;
-        trackName = searchResult.track.attributes.name;
-        trackArtist = searchResult.track.attributes.artistName;
-        await upsertSearchIndex(
-          { storefront, song, artist, albumName, duration },
-          { albumId: resolvedAlbumId, trackName, trackArtist }
-        );
-      } catch (error) {
-        if (error instanceof UpstreamRateLimitedError) throw error;
-        log.error(Tag.SEARCH, 'search failed', error);
-        return { error: 'Search failed' };
       }
     }
   } else {
@@ -197,16 +213,12 @@ async function handleArtworkRequest(
     if (cachedAlbum.notFound) {
       return { error: 'Album not found' };
     }
-    return {
-      name: trackName || cachedAlbum.name || '',
-      artist: trackArtist || cachedAlbum.artist || '',
-      albumId: cachedAlbum.albumId,
-      static: cachedAlbum.staticUrl || '',
-      animated: cachedAlbum.animatedUrl,
-      animatedVertical: cachedAlbum.animatedVerticalUrl,
-      videoUrl: cachedAlbum.videoUrl,
-      videoUrlVertical: cachedAlbum.videoVerticalUrl,
-    };
+    return albumRowToResponse(cachedAlbum, trackName, trackArtist);
+  }
+
+  const crossAlbum = await getAlbumByIdAnywhere(resolvedAlbumId);
+  if (crossAlbum) {
+    return albumRowToResponse(crossAlbum, trackName, trackArtist);
   }
 
   if (!tokenResult) {
@@ -264,7 +276,11 @@ async function handleArtworkRequest(
       videoUrlVertical: videoVerticalUrl,
     };
   } catch (error) {
-    if (error instanceof UpstreamRateLimitedError) throw error;
+    if (error instanceof UpstreamRateLimitedError) {
+      const stale = await getAlbumByIdAnywhere(resolvedAlbumId, { includeExpired: true });
+      if (stale) return albumRowToResponse(stale, trackName, trackArtist);
+      throw error;
+    }
     log.error(Tag.ALBUM, 'fetch failed', error);
     return { error: 'Failed to fetch album data' };
   }
