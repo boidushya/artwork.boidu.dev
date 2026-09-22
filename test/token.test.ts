@@ -199,3 +199,36 @@ describe('getToken', () => {
     assert.ok(calls.length > countBefore);
   });
 });
+
+describe('scrape token TTL', () => {
+  test('scrape fallback re-mints within minutes, not an hour', async (t) => {
+    t.mock.timers.enable({ apis: ['Date'] });
+    let mintUp = false;
+    route([
+      ['am-mint', () => (mintUp ? mintOk('MINT_BACK') : (() => { throw new Error('down'); })())],
+      ...scrapeRoutes,
+    ]);
+    const first = await getToken();
+    assert.equal(first.source, 'scrape');
+
+    mintUp = true;
+    t.mock.timers.tick(200_000);
+    const second = await getToken();
+    assert.equal(second.source, 'mint');
+    assert.equal(second.token, 'MINT_BACK');
+  });
+
+  test('scrape fallback stays cached within its TTL', async (t) => {
+    t.mock.timers.enable({ apis: ['Date'] });
+    route([
+      ['am-mint', () => { throw new Error('down'); }],
+      ...scrapeRoutes,
+    ]);
+    await getToken();
+    const before = calls.length;
+    t.mock.timers.tick(60_000);
+    const again = await getToken();
+    assert.equal(again.source, 'scrape');
+    assert.equal(calls.length, before);
+  });
+});
