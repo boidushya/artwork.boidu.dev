@@ -12,7 +12,7 @@ export function getPool(): pg.Pool | null {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     if (!missingUrlWarned) {
-      log.warn(Tag.DB, 'DATABASE_URL not set — running without cache');
+      log.warn(Tag.DB, 'DATABASE_URL not set, running without cache');
       missingUrlWarned = true;
     }
     return null;
@@ -80,6 +80,8 @@ CREATE TABLE IF NOT EXISTS search_index (
 
 CREATE INDEX IF NOT EXISTS idx_album_expiry  ON album_cache  (expires_at);
 CREATE INDEX IF NOT EXISTS idx_search_expiry ON search_index (expires_at);
+CREATE INDEX IF NOT EXISTS idx_album_id ON album_cache (album_id);
+CREATE INDEX IF NOT EXISTS idx_search_song_artist ON search_index (song, artist, album, duration);
 
 ALTER TABLE album_cache ADD COLUMN IF NOT EXISTS recheck_count INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE album_cache ADD COLUMN IF NOT EXISTS animated_vertical_url TEXT;

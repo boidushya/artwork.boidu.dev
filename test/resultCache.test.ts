@@ -1,6 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSearchKey, computeAlbumTtl, TTL } from '../src/resultCache.ts';
+import { buildSearchKey, computeAlbumTtl, TTL, albumRowToResponse } from '../src/resultCache.ts';
+import type { AlbumCacheRow } from '../src/resultCache.ts';
 
 describe('buildSearchKey', () => {
   test('returns the storefront verbatim (not normalized)', () => {
@@ -97,6 +98,70 @@ describe('buildSearchKey', () => {
     const a = buildSearchKey({ storefront: 'vn', song: 'Queen', artist: 'Queen' });
     const b = buildSearchKey({ storefront: 'vn', song: 'queen', artist: 'QUEEN' });
     assert.deepEqual(a, b);
+  });
+});
+
+describe('albumRowToResponse', () => {
+  const row: AlbumCacheRow = {
+    storefront: 'us',
+    albumId: 'A1',
+    name: 'Album Name',
+    artist: 'Album Artist',
+    staticUrl: 'https://cdn/static.jpg',
+    animatedUrl: 'https://cdn/a.m3u8',
+    animatedVerticalUrl: 'https://cdn/av.m3u8',
+    videoUrl: 'https://cdn/v.mp4',
+    videoVerticalUrl: 'https://cdn/vv.mp4',
+    hasAnimated: true,
+    notFound: false,
+    recheckCount: 0,
+  };
+
+  test('maps row fields to the response shape', () => {
+    const r = albumRowToResponse(row);
+    assert.deepEqual(r, {
+      name: 'Album Name',
+      artist: 'Album Artist',
+      albumId: 'A1',
+      static: 'https://cdn/static.jpg',
+      animated: 'https://cdn/a.m3u8',
+      animatedVertical: 'https://cdn/av.m3u8',
+      videoUrl: 'https://cdn/v.mp4',
+      videoUrlVertical: 'https://cdn/vv.mp4',
+    });
+  });
+
+  test('track name and artist override the row name and artist', () => {
+    const r = albumRowToResponse(row, 'Track Name', 'Track Artist');
+    assert.equal(r.name, 'Track Name');
+    assert.equal(r.artist, 'Track Artist');
+  });
+
+  test('falls back to row name/artist when track values are null', () => {
+    const r = albumRowToResponse(row, null, null);
+    assert.equal(r.name, 'Album Name');
+    assert.equal(r.artist, 'Album Artist');
+  });
+
+  test('null row name/artist/static become empty strings', () => {
+    const r = albumRowToResponse({ ...row, name: null, artist: null, staticUrl: null });
+    assert.equal(r.name, '');
+    assert.equal(r.artist, '');
+    assert.equal(r.static, '');
+  });
+
+  test('null animated/video fields pass through as null', () => {
+    const r = albumRowToResponse({
+      ...row,
+      animatedUrl: null,
+      animatedVerticalUrl: null,
+      videoUrl: null,
+      videoVerticalUrl: null,
+    });
+    assert.equal(r.animated, null);
+    assert.equal(r.animatedVertical, null);
+    assert.equal(r.videoUrl, null);
+    assert.equal(r.videoUrlVertical, null);
   });
 });
 
