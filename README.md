@@ -72,7 +72,7 @@ npm run dev
 | `a` | `artist` | Artist name for search |
 | `id` | - | Direct album ID |
 | `url` | - | Full album URL |
-| `storefront` | - | Country code (default: `us`) |
+| `storefront` | - | Ignored. The storefront is bound to the active Apple token (the minter's storefront, or the scrape default). |
 
 ## Priority gating (optional)
 

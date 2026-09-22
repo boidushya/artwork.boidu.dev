@@ -48,7 +48,6 @@ async function handleArtworkRequest(
   const artist = url.searchParams.get('a') || url.searchParams.get('artist');
   const albumId = url.searchParams.get('id');
   const appleUrl = url.searchParams.get('url');
-  const storefrontParam = url.searchParams.get('storefront');
   const albumName = url.searchParams.get('albumName') || undefined;
   const durationParam = url.searchParams.get('duration');
   const duration = durationParam ? parseInt(durationParam, 10) : undefined;
@@ -66,7 +65,7 @@ async function handleArtworkRequest(
     return { error: 'Failed to authenticate with Apple Music' };
   }
 
-  const storefront = storefrontParam || tokenResult.storefront || 'us';
+  const storefront = tokenResult.storefront || 'us';
   const storefrontId = storefrontHeaderId(tokenResult, storefront);
 
   // Route 1: Direct album ID
