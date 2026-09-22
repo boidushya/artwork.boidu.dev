@@ -24,14 +24,14 @@ import { log, Tag } from './logger';
 const MEDIA_USER_TOKEN = process.env.MEDIA_USER_TOKEN;
 log.info(
   Tag.MUT,
-  MEDIA_USER_TOKEN ? 'env loaded' : 'env NOT set — requests will be anonymous',
+  MEDIA_USER_TOKEN ? 'env loaded' : 'env NOT set, requests will be anonymous',
   MEDIA_USER_TOKEN ? { chars: MEDIA_USER_TOKEN.length } : undefined
 );
 
 try {
   await runMigrations();
 } catch (err) {
-  log.error(Tag.DB, 'startup migration failed — continuing without cache', err);
+  log.error(Tag.DB, 'startup migration failed, continuing without cache', err);
 }
 
 const app = new Hono();
@@ -123,11 +123,19 @@ async function handleArtworkRequest(
   const artist = url.searchParams.get('a') || url.searchParams.get('artist');
   const albumIdParam = url.searchParams.get('id');
   const appleUrl = url.searchParams.get('url');
-  const storefront = url.searchParams.get('storefront') || 'vn';
+  const storefrontParam = url.searchParams.get('storefront');
   const albumName =
     url.searchParams.get('al') || url.searchParams.get('albumName') || undefined;
   const durationParam = url.searchParams.get('d') || url.searchParams.get('duration');
   const duration = durationParam ? parseInt(durationParam, 10) : undefined;
+
+  let tokenResult: TokenResult | null = null;
+  try {
+    tokenResult = await getToken();
+  } catch (error) {
+    log.error(Tag.TOKEN, 'failed to get token', error);
+  }
+  const storefront = storefrontParam ?? tokenResult?.storefront ?? 'vn';
 
   let resolvedAlbumId: string | null = null;
   let trackName: string | null = null;
@@ -154,11 +162,7 @@ async function handleArtworkRequest(
       trackName = cachedSearch.trackName;
       trackArtist = cachedSearch.trackArtist;
     } else {
-      let tokenResult: TokenResult;
-      try {
-        tokenResult = await getToken();
-      } catch (error) {
-        log.error(Tag.TOKEN, 'failed to get token', error);
+      if (!tokenResult) {
         return { error: 'Failed to authenticate with Apple Music' };
       }
       try {
@@ -206,11 +210,7 @@ async function handleArtworkRequest(
     };
   }
 
-  let tokenResult: TokenResult;
-  try {
-    tokenResult = await getToken();
-  } catch (error) {
-    log.error(Tag.TOKEN, 'failed to get token', error);
+  if (!tokenResult) {
     return { error: 'Failed to authenticate with Apple Music' };
   }
 
@@ -271,6 +271,10 @@ async function handleArtworkRequest(
   }
 }
 
+function storefrontHeaderId(t: TokenResult, storefront: string): string | undefined {
+  return t.source === 'mint' && t.storefront === storefront ? t.storefrontId : undefined;
+}
+
 async function searchWithRetry(
   song: string,
   artist: string,
@@ -281,15 +285,16 @@ async function searchWithRetry(
   tier: Tier
 ) {
   const mut = tokenResult.source === 'scrape' ? MEDIA_USER_TOKEN : undefined;
+  const storefrontId = storefrontHeaderId(tokenResult, storefront);
   try {
-    return await searchTrack(song, artist, tokenResult.token, storefront, albumName, duration, mut, tokenResult.source, tier);
+    return await searchTrack(song, artist, tokenResult.token, storefront, albumName, duration, mut, tokenResult.source, tier, storefrontId);
   } catch (error) {
     if (error instanceof Error && error.message === 'TOKEN_EXPIRED') {
       log.warn(Tag.SEARCH, 'TOKEN_EXPIRED, retrying with fresh token');
       await invalidateToken();
       const fresh = await getToken();
       const freshMut = fresh.source === 'scrape' ? MEDIA_USER_TOKEN : undefined;
-      return await searchTrack(song, artist, fresh.token, storefront, albumName, duration, freshMut, fresh.source, tier);
+      return await searchTrack(song, artist, fresh.token, storefront, albumName, duration, freshMut, fresh.source, tier, storefrontHeaderId(fresh, storefront));
     }
     throw error;
   }
@@ -302,15 +307,16 @@ async function fetchAlbumWithRetry(
   tier: Tier
 ) {
   const mut = tokenResult.source === 'scrape' ? MEDIA_USER_TOKEN : undefined;
+  const storefrontId = storefrontHeaderId(tokenResult, storefront);
   try {
-    return await fetchAlbum(albumId, tokenResult.token, storefront, mut, tokenResult.source, tier);
+    return await fetchAlbum(albumId, tokenResult.token, storefront, mut, tokenResult.source, tier, storefrontId);
   } catch (error) {
     if (error instanceof Error && error.message === 'TOKEN_EXPIRED') {
       log.warn(Tag.ALBUM, 'TOKEN_EXPIRED, retrying with fresh token');
       await invalidateToken();
       const fresh = await getToken();
       const freshMut = fresh.source === 'scrape' ? MEDIA_USER_TOKEN : undefined;
-      return await fetchAlbum(albumId, fresh.token, storefront, freshMut, fresh.source, tier);
+      return await fetchAlbum(albumId, fresh.token, storefront, freshMut, fresh.source, tier, storefrontHeaderId(fresh, storefront));
     }
     throw error;
   }

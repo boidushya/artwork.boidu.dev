@@ -132,6 +132,26 @@ describe('fetchAlbum', () => {
     assert.equal(headers['media-user-token'], 'MUT_VALUE');
   });
 
+  test('sends X-Apple-Store-Front header when storefrontId provided', async () => {
+    let headers: Record<string, string> = {};
+    globalThis.fetch = async (_url, init) => {
+      headers = (init?.headers as Record<string, string>) ?? {};
+      return mockAlbumResponse({});
+    };
+    await fetchAlbum('12345', 'TOKEN', 'pl', undefined, 'mint', 'priority', '143478-2,31');
+    assert.equal(headers['X-Apple-Store-Front'], '143478-2,31');
+  });
+
+  test('omits X-Apple-Store-Front header when storefrontId absent', async () => {
+    let headers: Record<string, string> = {};
+    globalThis.fetch = async (_url, init) => {
+      headers = (init?.headers as Record<string, string>) ?? {};
+      return mockAlbumResponse({});
+    };
+    await fetchAlbum('12345', 'TOKEN', 'vn');
+    assert.equal(headers['X-Apple-Store-Front'], undefined);
+  });
+
   test('throws TOKEN_EXPIRED on HTTP 401', async () => {
     globalThis.fetch = async () => new Response('', { status: 401 });
     await assert.rejects(() => fetchAlbum('12345', 'TOKEN'), /TOKEN_EXPIRED/);

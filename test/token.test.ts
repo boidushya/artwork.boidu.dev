@@ -1,6 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { getToken, invalidateToken, clampTokenTtl } from '../src/token.ts';
+import { getToken, invalidateToken, clampTokenTtl, mintedStorefrontCode } from '../src/token.ts';
 
 const SCRAPED_JWT =
   'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6RkFLRSJ9.eyJmYWtlIjp0cnVlfQ.sig';
@@ -52,12 +52,86 @@ describe('clampTokenTtl', () => {
   test('falls back to 60 for non-finite', () => assert.equal(clampTokenTtl(NaN), 60));
 });
 
+function mintRaw(body: Record<string, unknown>): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+describe('mintedStorefrontCode', () => {
+  test('maps X-Apple-Store-Front form to two-letter code', () => {
+    assert.equal(mintedStorefrontCode('143478-2,31'), 'pl');
+  });
+  test('maps vietnam', () => {
+    assert.equal(mintedStorefrontCode('143471-2,29'), 'vn');
+  });
+  test('maps a bare numeric id', () => {
+    assert.equal(mintedStorefrontCode('143441'), 'us');
+  });
+  test('strips at comma when no dash present', () => {
+    assert.equal(mintedStorefrontCode('143444,31'), 'gb');
+  });
+  test('returns undefined for an unknown numeric id', () => {
+    assert.equal(mintedStorefrontCode('999999-2,31'), undefined);
+  });
+  test('returns undefined for empty input', () => {
+    assert.equal(mintedStorefrontCode(''), undefined);
+  });
+});
+
 describe('getToken', () => {
   test('mint success returns source=mint', async () => {
     route([['am-mint', () => mintOk('MINT_A')]]);
     const r = await getToken();
     assert.equal(r.token, 'MINT_A');
     assert.equal(r.source, 'mint');
+  });
+
+  test('mint success carries mapped storefront and raw storefrontId', async () => {
+    route([['am-mint', () => mintOk('MINT_SF')]]);
+    const r = await getToken();
+    assert.equal(r.source, 'mint');
+    assert.equal(r.storefront, 'pl');
+    assert.equal(r.storefrontId, '143478-2,31');
+  });
+
+  test('cached mint token round-trips storefront and storefrontId', async () => {
+    route([['am-mint', () => mintOk('MINT_RT')]]);
+    await getToken();
+    const r2 = await getToken();
+    assert.equal(r2.storefront, 'pl');
+    assert.equal(r2.storefrontId, '143478-2,31');
+  });
+
+  test('fails closed to scrape when storefront_id is unmappable', async () => {
+    route([
+      ['am-mint', () => mintRaw({ token: 'X', storefront_id: '999999-2,31', cache_ttl_seconds: 120 })],
+      ...scrapeRoutes,
+    ]);
+    const r = await getToken();
+    assert.equal(r.source, 'scrape');
+    assert.equal(r.storefront, undefined);
+  });
+
+  test('fails closed to scrape when storefront_id is absent', async () => {
+    route([
+      ['am-mint', () => mintRaw({ token: 'X', cache_ttl_seconds: 120 })],
+      ...scrapeRoutes,
+    ]);
+    const r = await getToken();
+    assert.equal(r.source, 'scrape');
+  });
+
+  test('scrape token has no storefront binding', async () => {
+    route([
+      ['am-mint', () => { throw new Error('down'); }],
+      ...scrapeRoutes,
+    ]);
+    const r = await getToken();
+    assert.equal(r.source, 'scrape');
+    assert.equal(r.storefront, undefined);
+    assert.equal(r.storefrontId, undefined);
   });
 
   test('reuses cached token without re-fetching within TTL', async () => {

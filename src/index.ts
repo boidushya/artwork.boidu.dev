@@ -48,7 +48,7 @@ async function handleArtworkRequest(
   const artist = url.searchParams.get('a') || url.searchParams.get('artist');
   const albumId = url.searchParams.get('id');
   const appleUrl = url.searchParams.get('url');
-  const storefront = url.searchParams.get('storefront') || 'us';
+  const storefrontParam = url.searchParams.get('storefront');
   const albumName = url.searchParams.get('albumName') || undefined;
   const durationParam = url.searchParams.get('duration');
   const duration = durationParam ? parseInt(durationParam, 10) : undefined;
@@ -66,6 +66,9 @@ async function handleArtworkRequest(
     return { error: 'Failed to authenticate with Apple Music' };
   }
 
+  const storefront = storefrontParam ?? tokenResult.storefront ?? 'us';
+  const storefrontId = storefrontHeaderId(tokenResult, storefront);
+
   // Route 1: Direct album ID
   if (albumId) {
     resolvedAlbumId = albumId;
@@ -80,7 +83,7 @@ async function handleArtworkRequest(
   // Route 3: Search by song + artist
   else if (song && artist) {
     try {
-      const searchResult = await searchWithRetry(song, artist, tokenResult.token, tokenResult.source, storefront, env, albumName, duration);
+      const searchResult = await searchWithRetry(song, artist, tokenResult.token, tokenResult.source, storefront, env, albumName, duration, storefrontId);
       if (!searchResult) {
         return { error: 'No matching tracks found' };
       }
@@ -101,7 +104,7 @@ async function handleArtworkRequest(
 
   // Fetch album data
   try {
-    const albumData = await fetchAlbumWithRetry(resolvedAlbumId, tokenResult.token, tokenResult.source, storefront, env);
+    const albumData = await fetchAlbumWithRetry(resolvedAlbumId, tokenResult.token, tokenResult.source, storefront, env, storefrontId);
     if (!albumData) {
       return { error: 'Album not found' };
     }
@@ -127,6 +130,10 @@ async function handleArtworkRequest(
   }
 }
 
+function storefrontHeaderId(t: TokenResult, storefront: string): string | undefined {
+  return t.source === 'mint' && t.storefront === storefront ? t.storefrontId : undefined;
+}
+
 async function searchWithRetry(
   song: string,
   artist: string,
@@ -135,16 +142,17 @@ async function searchWithRetry(
   storefront: string,
   env: Env,
   albumName?: string,
-  duration?: number
+  duration?: number,
+  storefrontId?: string
 ) {
   try {
-    return await searchTrack(song, artist, token, storefront, albumName, duration, undefined, source);
+    return await searchTrack(song, artist, token, storefront, albumName, duration, undefined, source, undefined, storefrontId);
   } catch (error) {
     if (error instanceof Error && error.message === 'TOKEN_EXPIRED') {
       // Invalidate token and retry once
       await invalidateToken(env);
       const fresh = await getToken(env);
-      return await searchTrack(song, artist, fresh.token, storefront, albumName, duration, undefined, fresh.source);
+      return await searchTrack(song, artist, fresh.token, storefront, albumName, duration, undefined, fresh.source, undefined, storefrontHeaderId(fresh, storefront));
     }
     throw error;
   }
@@ -155,16 +163,17 @@ async function fetchAlbumWithRetry(
   token: string,
   source: TokenSource,
   storefront: string,
-  env: Env
+  env: Env,
+  storefrontId?: string
 ) {
   try {
-    return await fetchAlbum(albumId, token, storefront, undefined, source);
+    return await fetchAlbum(albumId, token, storefront, undefined, source, undefined, storefrontId);
   } catch (error) {
     if (error instanceof Error && error.message === 'TOKEN_EXPIRED') {
       // Invalidate token and retry once
       await invalidateToken(env);
       const fresh = await getToken(env);
-      return await fetchAlbum(albumId, fresh.token, storefront, undefined, fresh.source);
+      return await fetchAlbum(albumId, fresh.token, storefront, undefined, fresh.source, undefined, storefrontHeaderId(fresh, storefront));
     }
     throw error;
   }

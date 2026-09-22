@@ -21,7 +21,8 @@ export async function fetchAlbum(
   storefront: string = 'vn',
   mut?: string,
   source: TokenSource = 'scrape',
-  tier: Tier = 'priority'
+  tier: Tier = 'priority',
+  storefrontId?: string
 ): Promise<AlbumData | null> {
   const url = `${API_BASE}/catalog/${storefront}/albums/${albumId}?extend=editorialVideo`;
 
@@ -32,6 +33,9 @@ export async function fetchAlbum(
   };
   if (mut) {
     headers['media-user-token'] = mut;
+  }
+  if (storefrontId) {
+    headers['X-Apple-Store-Front'] = storefrontId;
   }
 
   log.info(Tag.ALBUM, '→ apple', { storefront, albumId, mut: !!mut });
