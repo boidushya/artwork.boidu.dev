@@ -1,5 +1,5 @@
 import type { Env, ArtworkResponse, ErrorResponse } from './types';
-import { getToken, invalidateToken } from './token';
+import { getToken, invalidateToken, storefrontHeaderId } from './token';
 import type { TokenResult, TokenSource } from './token';
 import { searchTrack } from './search';
 import { fetchAlbum, parseAlbumIdFromUrl } from './album';
@@ -66,7 +66,7 @@ async function handleArtworkRequest(
     return { error: 'Failed to authenticate with Apple Music' };
   }
 
-  const storefront = storefrontParam ?? tokenResult.storefront ?? 'us';
+  const storefront = storefrontParam || tokenResult.storefront || 'us';
   const storefrontId = storefrontHeaderId(tokenResult, storefront);
 
   // Route 1: Direct album ID
@@ -128,10 +128,6 @@ async function handleArtworkRequest(
     console.error('Album fetch failed:', error);
     return { error: 'Failed to fetch album data' };
   }
-}
-
-function storefrontHeaderId(t: TokenResult, storefront: string): string | undefined {
-  return t.source === 'mint' && t.storefront === storefront ? t.storefrontId : undefined;
 }
 
 async function searchWithRetry(

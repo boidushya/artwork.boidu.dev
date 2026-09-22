@@ -57,6 +57,10 @@ export function mintedStorefrontCode(storefrontId: string): string | undefined {
   return APPLE_STOREFRONT_CODES[numeric];
 }
 
+export function storefrontHeaderId(t: TokenResult, storefront: string): string | undefined {
+  return t.source === 'mint' && t.storefront === storefront ? t.storefrontId : undefined;
+}
+
 export function clampTokenTtl(ttl: number): number {
   if (!Number.isFinite(ttl)) return MIN_TTL_SECONDS;
   return Math.max(MIN_TTL_SECONDS, Math.min(MAX_TTL_SECONDS, Math.floor(ttl)));
@@ -102,7 +106,7 @@ async function mintToken(): Promise<{ token: string; ttlSeconds: number; storefr
   if (!res.ok) throw new Error(`mint failed: ${res.status}`);
   const data = (await res.json()) as { token?: string; cache_ttl_seconds?: number; storefront_id?: string };
   if (!data.token) throw new Error('mint response missing token');
-  const storefrontId = data.storefront_id ?? '';
+  const storefrontId = typeof data.storefront_id === 'string' ? data.storefront_id : '';
   const storefront = mintedStorefrontCode(storefrontId);
   if (!storefront) throw new Error(`mint returned unmappable storefront ${JSON.stringify(storefrontId)}`);
   return {

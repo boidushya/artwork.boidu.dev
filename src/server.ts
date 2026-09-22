@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serve } from '@hono/node-server';
 import type { ArtworkResponse, ErrorResponse } from './types';
-import { getToken, invalidateToken } from './token';
+import { getToken, invalidateToken, storefrontHeaderId } from './token';
 import { searchTrack } from './search';
 import { fetchAlbum, parseAlbumIdFromUrl } from './album';
 import { resolveVideoUrl } from './m3u8';
@@ -135,7 +135,7 @@ async function handleArtworkRequest(
   } catch (error) {
     log.error(Tag.TOKEN, 'failed to get token', error);
   }
-  const storefront = storefrontParam ?? tokenResult?.storefront ?? 'vn';
+  const storefront = storefrontParam || tokenResult?.storefront || 'vn';
 
   let resolvedAlbumId: string | null = null;
   let trackName: string | null = null;
@@ -269,10 +269,6 @@ async function handleArtworkRequest(
     log.error(Tag.ALBUM, 'fetch failed', error);
     return { error: 'Failed to fetch album data' };
   }
-}
-
-function storefrontHeaderId(t: TokenResult, storefront: string): string | undefined {
-  return t.source === 'mint' && t.storefront === storefront ? t.storefrontId : undefined;
 }
 
 async function searchWithRetry(

@@ -1,6 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { getToken, invalidateToken, clampTokenTtl, mintedStorefrontCode } from '../src/token.ts';
+import { getToken, invalidateToken, clampTokenTtl, mintedStorefrontCode, storefrontHeaderId } from '../src/token.ts';
 
 const SCRAPED_JWT =
   'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6RkFLRSJ9.eyJmYWtlIjp0cnVlfQ.sig';
@@ -77,6 +77,24 @@ describe('mintedStorefrontCode', () => {
   });
   test('returns undefined for empty input', () => {
     assert.equal(mintedStorefrontCode(''), undefined);
+  });
+});
+
+describe('storefrontHeaderId', () => {
+  test('returns raw id when the mint storefront matches the query path', () => {
+    assert.equal(
+      storefrontHeaderId({ token: 'T', source: 'mint', storefront: 'pl', storefrontId: '143478-2,31' }, 'pl'),
+      '143478-2,31'
+    );
+  });
+  test('returns undefined when an override storefront differs from the mint binding', () => {
+    assert.equal(
+      storefrontHeaderId({ token: 'T', source: 'mint', storefront: 'pl', storefrontId: '143478-2,31' }, 'us'),
+      undefined
+    );
+  });
+  test('returns undefined for scrape tokens', () => {
+    assert.equal(storefrontHeaderId({ token: 'T', source: 'scrape' }, 'vn'), undefined);
   });
 });
 
