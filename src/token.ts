@@ -3,7 +3,7 @@ import * as cache from './cache';
 import { log, Tag } from './logger';
 
 const TOKEN_CACHE_KEY = 'apple_music_token';
-const TOKEN_TTL_SECONDS = 3600;
+const SCRAPE_TOKEN_TTL_SECONDS = 150;
 
 const AM_MINT_URL = process.env.AM_MINT_URL || 'https://am-mint.binimum.org/token';
 const MINT_TIMEOUT_MS = 5000;
@@ -135,7 +135,7 @@ export async function getToken(env?: Env): Promise<TokenResult> {
     log.warn(Tag.TOKEN, 'mint failed, falling back to scrape', err);
     const token = await scrapeToken();
     result = { token, source: 'scrape' };
-    ttlSeconds = TOKEN_TTL_SECONDS;
+    ttlSeconds = SCRAPE_TOKEN_TTL_SECONDS;
     log.info(Tag.TOKEN, 'token source=scrape', { ttlSeconds, chars: token.length });
   }
 
