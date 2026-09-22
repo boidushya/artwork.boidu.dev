@@ -157,6 +157,26 @@ describe('searchTrack', () => {
     assert.equal(headers['media-user-token'], 'MUT_VALUE');
   });
 
+  test('sends X-Apple-Store-Front header when storefrontId provided', async () => {
+    let headers: Record<string, string> = {};
+    globalThis.fetch = async (_url, init) => {
+      headers = (init?.headers as Record<string, string>) ?? {};
+      return mockSearchResponse([makeTrack()]);
+    };
+    await searchTrack('B', 'Q', 'TOKEN', 'pl', undefined, undefined, undefined, 'mint', 'priority', '143478-2,31');
+    assert.equal(headers['X-Apple-Store-Front'], '143478-2,31');
+  });
+
+  test('omits X-Apple-Store-Front header when storefrontId absent', async () => {
+    let headers: Record<string, string> = {};
+    globalThis.fetch = async (_url, init) => {
+      headers = (init?.headers as Record<string, string>) ?? {};
+      return mockSearchResponse([makeTrack()]);
+    };
+    await searchTrack('B', 'Q', 'TOKEN', 'vn');
+    assert.equal(headers['X-Apple-Store-Front'], undefined);
+  });
+
   test('throws TOKEN_EXPIRED on HTTP 401', async () => {
     globalThis.fetch = async () => new Response('', { status: 401 });
     await assert.rejects(() => searchTrack('B', 'Q', 'TOKEN'), /TOKEN_EXPIRED/);

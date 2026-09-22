@@ -17,7 +17,8 @@ export async function searchTrack(
   duration?: number,
   mut?: string,
   source: TokenSource = 'scrape',
-  tier: Tier = 'priority'
+  tier: Tier = 'priority',
+  storefrontId?: string
 ): Promise<SearchResult | null> {
   const query = `${song} ${artist}`.trim();
   const searchUrl = `${API_BASE}/catalog/${storefront}/search?term=${encodeURIComponent(query)}&types=songs&limit=10`;
@@ -29,6 +30,9 @@ export async function searchTrack(
   };
   if (mut) {
     headers['media-user-token'] = mut;
+  }
+  if (storefrontId) {
+    headers['X-Apple-Store-Front'] = storefrontId;
   }
 
   log.info(Tag.SEARCH, '→ apple', { storefront, query, mut: !!mut, albumName, duration });
@@ -134,7 +138,7 @@ function scoreTrack(
     score = songSim * (50 / 87.5) + artistSim * (37.5 / 87.5);
   }
 
-  // Variant penalties (scaled to 0–1 range)
+  // Variant penalties (scaled to 0 to 1 range)
   const lowerTrackName = trackName.toLowerCase();
   if (!searchSong.includes('remix') && lowerTrackName.includes('remix')) {
     score -= 0.15;
