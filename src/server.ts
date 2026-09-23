@@ -4,7 +4,7 @@ import { serve } from '@hono/node-server';
 import type { ArtworkResponse, ErrorResponse } from './types';
 import { getToken, invalidateToken, storefrontHeaderId } from './token';
 import { searchTrack, searchWebLane } from './search';
-import { fetchAlbum, parseAlbumIdFromUrl } from './album';
+import { fetchAlbum, isAppleAlbumId, parseAlbumIdFromUrl } from './album';
 import { resolveVideoUrl } from './m3u8';
 import { runMigrations } from './db';
 import {
@@ -144,6 +144,10 @@ async function handleArtworkRequest(
   let trackArtist: string | null = null;
 
   if (albumIdParam) {
+    if (!isAppleAlbumId(albumIdParam)) {
+      log.info(Tag.HTTP, 'rejected non-apple album id', { albumId: albumIdParam });
+      return { error: 'Invalid album id' };
+    }
     log.debug(Tag.HTTP, 'route: direct id', { albumId: albumIdParam });
     resolvedAlbumId = albumIdParam;
   } else if (appleUrl) {

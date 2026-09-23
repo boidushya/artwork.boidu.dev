@@ -110,6 +110,10 @@ function extractAlbumData(album: AppleMusicAlbum): AlbumData {
   };
 }
 
+export function isAppleAlbumId(id: string): boolean {
+  return /^[0-9]+$/.test(id);
+}
+
 export function parseAlbumIdFromUrl(url: string): string | null {
   // Handle various Apple Music URL formats:
   // https://music.apple.com/us/album/album-name/1234567890
