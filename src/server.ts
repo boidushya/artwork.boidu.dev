@@ -3,7 +3,7 @@ import { cors } from 'hono/cors';
 import { serve } from '@hono/node-server';
 import type { ArtworkResponse, ErrorResponse } from './types';
 import { getToken, invalidateToken, storefrontHeaderId } from './token';
-import { searchTrack } from './search';
+import { searchTrack, searchWebLane } from './search';
 import { fetchAlbum, parseAlbumIdFromUrl } from './album';
 import { resolveVideoUrl } from './m3u8';
 import { runMigrations } from './db';
@@ -287,6 +287,29 @@ async function handleArtworkRequest(
 }
 
 async function searchWithRetry(
+  song: string,
+  artist: string,
+  tokenResult: TokenResult,
+  storefront: string,
+  albumName: string | undefined,
+  duration: number | undefined,
+  tier: Tier
+) {
+  try {
+    return await searchWithToken(song, artist, tokenResult, storefront, albumName, duration, tier);
+  } catch (error) {
+    if (!(error instanceof UpstreamRateLimitedError) || tokenResult.source !== 'mint') throw error;
+    log.info(Tag.SEARCH, 'mint token rate limited, trying web token');
+    try {
+      return await searchWebLane(song, artist, albumName, duration, tier);
+    } catch (webError) {
+      log.warn(Tag.SEARCH, 'web token search failed', webError);
+      throw error;
+    }
+  }
+}
+
+async function searchWithToken(
   song: string,
   artist: string,
   tokenResult: TokenResult,
