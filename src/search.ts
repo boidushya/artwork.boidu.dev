@@ -5,8 +5,14 @@ import { log, Tag } from './logger';
 import { fetchAppleWithRetry, UpstreamRateLimitedError } from './outboundLimiter';
 
 const API_BASE = 'https://amp-api.music.apple.com/v1';
+const EDGE_API_BASE = 'https://amp-api-edge.music.apple.com/v1';
+const SEARCH_EDGE_PERCENT = parseFloat(process.env.APPLE_SEARCH_EDGE_PERCENT || '0');
 const MIN_SCORE_THRESHOLD = 0.6;
 const DURATION_MATCH_DELTA_MS = 2000;
+
+export function searchApiBase(edgePercent = SEARCH_EDGE_PERCENT, roll = Math.random()): string {
+  return roll * 100 < edgePercent ? EDGE_API_BASE : API_BASE;
+}
 
 export async function searchTrack(
   song: string,
@@ -21,7 +27,9 @@ export async function searchTrack(
   storefrontId?: string
 ): Promise<SearchResult | null> {
   const query = `${song} ${artist}`.trim();
-  const searchUrl = `${API_BASE}/catalog/${storefront}/search?term=${encodeURIComponent(query)}&types=songs&limit=10`;
+  const base = searchApiBase();
+  const host = base === EDGE_API_BASE ? 'edge' : 'amp';
+  const searchUrl = `${base}/catalog/${storefront}/search?term=${encodeURIComponent(query)}&types=songs&limit=10`;
 
   const headers: Record<string, string> = {
     'Authorization': `Bearer ${token}`,
@@ -35,7 +43,7 @@ export async function searchTrack(
     headers['X-Apple-Store-Front'] = storefrontId;
   }
 
-  log.info(Tag.SEARCH, '→ apple', { storefront, query, mut: !!mut, albumName, duration });
+  log.info(Tag.SEARCH, '→ apple', { host, storefront, query, mut: !!mut, albumName, duration });
   const start = Date.now();
   const response = await fetchAppleWithRetry(searchUrl, { headers }, 'search', Tag.SEARCH, source, tier);
   const ms = Date.now() - start;
@@ -46,16 +54,16 @@ export async function searchTrack(
       throw new Error('TOKEN_EXPIRED');
     }
     if (response.status === 429) {
-      log.error(Tag.SEARCH, '← 429 rate limited after retries', { ms });
+      log.error(Tag.SEARCH, '← 429 rate limited after retries', { host, ms });
       throw new UpstreamRateLimitedError('search');
     }
-    log.error(Tag.SEARCH, '← error', { status: response.status, ms });
+    log.error(Tag.SEARCH, '← error', { host, status: response.status, ms });
     throw new Error(`Search failed: ${response.status}`);
   }
 
   const data: AppleMusicSearchResponse = await response.json();
   const rawTracks = data.results?.songs?.data ?? [];
-  log.info(Tag.SEARCH, '← ok', { status: response.status, ms, tracks: rawTracks.length });
+  log.info(Tag.SEARCH, '← ok', { host, status: response.status, ms, tracks: rawTracks.length });
 
   if (rawTracks.length === 0) {
     log.info(Tag.SEARCH, 'no results from apple');
