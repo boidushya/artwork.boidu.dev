@@ -17,7 +17,7 @@ const PRIORITY_RESERVE = parseInt(process.env.APPLE_PRIORITY_RESERVE || '2', 10)
 const STANDARD_MAX_QUEUE_WAIT_MS = parseInt(process.env.APPLE_STANDARD_MAX_WAIT_MS || '1500', 10);
 const PRIORITY_ACTIVE_WINDOW_MS = parseInt(process.env.APPLE_PRIORITY_WINDOW_MS || '5000', 10);
 
-export type AppleEndpoint = 'search' | 'searchEdge' | 'album';
+export type AppleEndpoint = 'search' | 'searchEdge' | 'searchWeb' | 'searchWebEdge' | 'album';
 
 export class UpstreamRateLimitedError extends Error {
   constructor(public readonly endpoint: AppleEndpoint) {
@@ -51,6 +51,8 @@ export function createCircuitBreaker(opts: {
   const states: Record<AppleEndpoint, CircuitState> = {
     search: { consecutiveFailures: 0, trips: 0, openUntil: 0 },
     searchEdge: { consecutiveFailures: 0, trips: 0, openUntil: 0 },
+    searchWeb: { consecutiveFailures: 0, trips: 0, openUntil: 0 },
+    searchWebEdge: { consecutiveFailures: 0, trips: 0, openUntil: 0 },
     album: { consecutiveFailures: 0, trips: 0, openUntil: 0 },
   };
 

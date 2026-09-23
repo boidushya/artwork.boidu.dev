@@ -1,7 +1,8 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { searchTrack, normalize, stringSimilarity } from '../src/search.ts';
-import { UpstreamRateLimitedError } from '../src/outboundLimiter.ts';
+import { searchTrack, searchWebLane, normalize, stringSimilarity } from '../src/search.ts';
+import { invalidateWebToken } from '../src/token.ts';
+import { getCircuitState, UpstreamRateLimitedError } from '../src/outboundLimiter.ts';
 import type { AppleMusicTrack } from '../src/types.ts';
 
 let originalFetch: typeof globalThis.fetch;
@@ -141,7 +142,7 @@ describe('searchTrack host fallback', () => {
     test('throws UpstreamRateLimitedError for search when both hosts return 429', async () => {
       globalThis.fetch = async () => new Response('', { status: 429 });
       await assert.rejects(
-        () => searchTrack('B', 'Q', 'TOKEN'),
+        () => searchTrack('B', 'Q', 'TOKEN', 'pl', undefined, undefined, undefined, 'mint', 'priority'),
         (err) => err instanceof UpstreamRateLimitedError && err.endpoint === 'search'
       );
     });
@@ -361,5 +362,91 @@ describe('searchTrack', () => {
     );
     assert.ok(result);
     assert.equal(result.track.id, 'matching');
+  });
+});
+
+describe('searchTrack circuits per token', () => {
+  test('scrape token 429s count against the web circuits, not the mint ones', async () => {
+    globalThis.fetch = async () => new Response('', { status: 429 });
+    const mintAmp = getCircuitState('search').consecutiveFailures;
+    const mintEdge = getCircuitState('searchEdge').consecutiveFailures;
+    const webAmp = getCircuitState('searchWeb').consecutiveFailures;
+    const webEdge = getCircuitState('searchWebEdge').consecutiveFailures;
+    await assert.rejects(
+      () => searchTrack('B', 'Q', 'WEB', 'us', undefined, undefined, undefined, 'scrape', 'priority'),
+      (err) => err instanceof UpstreamRateLimitedError && err.endpoint === 'searchWeb'
+    );
+    assert.equal(getCircuitState('search').consecutiveFailures, mintAmp);
+    assert.equal(getCircuitState('searchEdge').consecutiveFailures, mintEdge);
+    assert.equal(getCircuitState('searchWeb').consecutiveFailures, webAmp + 1);
+    assert.equal(getCircuitState('searchWebEdge').consecutiveFailures, webEdge + 1);
+  });
+
+  test('mint token 429s leave the web circuits alone', async () => {
+    globalThis.fetch = async () => new Response('', { status: 429 });
+    const webAmp = getCircuitState('searchWeb').consecutiveFailures;
+    await assert.rejects(() => searchTrack('B', 'Q', 'MINT', 'pl', undefined, undefined, undefined, 'mint', 'priority'));
+    assert.equal(getCircuitState('searchWeb').consecutiveFailures, webAmp);
+  });
+});
+
+describe('searchWebLane', () => {
+  const WEB_JWT = 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6RkFLRSJ9.eyJmYWtlIjp0cnVlfQ.sig';
+  const scrape = (url: string) => {
+    if (url.includes('music.apple.com/us/browse')) return new Response('<script src="/assets/index-abc123.js"></script>');
+    if (url.includes('index-abc123.js')) return new Response(`x="${WEB_JWT}"`);
+    return null;
+  };
+
+  beforeEach(() => invalidateWebToken());
+
+  test('searches the us storefront with the scraped token', async () => {
+    const seen: { url: string; headers: Record<string, string> }[] = [];
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      const s = scrape(url);
+      if (s) return s;
+      seen.push({ url, headers: (init?.headers as Record<string, string>) ?? {} });
+      return mockSearchResponse([makeTrack()]);
+    };
+    const result = await searchWebLane('Bohemian Rhapsody', 'Queen', undefined, undefined, 'standard');
+    assert.ok(result);
+    assert.equal(result.albumId, '999001');
+    assert.match(seen[0].url, /\/catalog\/us\/search\?/);
+    assert.equal(seen[0].headers['Authorization'], `Bearer ${WEB_JWT}`);
+  });
+
+  test('sends no storefront binding and no media-user-token', async () => {
+    let headers: Record<string, string> = {};
+    globalThis.fetch = async (input, init) => {
+      const s = scrape(String(input));
+      if (s) return s;
+      headers = (init?.headers as Record<string, string>) ?? {};
+      return mockSearchResponse([makeTrack()]);
+    };
+    await searchWebLane('B', 'Q', undefined, undefined, 'standard');
+    assert.equal(headers['X-Apple-Store-Front'], undefined);
+    assert.equal(headers['media-user-token'], undefined);
+  });
+
+  describe('error paths', () => {
+    test('drops the cached web token on 401 so the next call re-scrapes', async () => {
+      let scrapes = 0;
+      globalThis.fetch = async (input) => {
+        const url = String(input);
+        if (url.includes('/us/browse')) scrapes++;
+        const s = scrape(url);
+        if (s) return s;
+        return new Response('', { status: 401 });
+      };
+      await assert.rejects(() => searchWebLane('B', 'Q', undefined, undefined, 'standard'), /TOKEN_EXPIRED/);
+      await assert.rejects(() => searchWebLane('B', 'Q', undefined, undefined, 'standard'), /TOKEN_EXPIRED/);
+      assert.equal(scrapes, 2);
+    });
+
+    test('rejects when the scrape fails', async () => {
+      globalThis.fetch = async () => new Response('', { status: 503 });
+      await assert.rejects(() => searchWebLane('B', 'Q', undefined, undefined, 'standard'), /browse page: 503/);
+    });
   });
 });

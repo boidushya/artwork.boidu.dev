@@ -1,6 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { getToken, invalidateToken, clampTokenTtl, mintedStorefrontCode, storefrontHeaderId } from '../src/token.ts';
+import { getToken, invalidateToken, getWebToken, invalidateWebToken, clampTokenTtl, mintedStorefrontCode, storefrontHeaderId } from '../src/token.ts';
 
 const SCRAPED_JWT =
   'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6RkFLRSJ9.eyJmYWtlIjp0cnVlfQ.sig';
@@ -38,10 +38,12 @@ beforeEach(async () => {
   originalFetch = globalThis.fetch;
   calls = [];
   await invalidateToken();
+  invalidateWebToken();
 });
 afterEach(async () => {
   globalThis.fetch = originalFetch;
   await invalidateToken();
+  invalidateWebToken();
 });
 
 describe('clampTokenTtl', () => {
@@ -230,5 +232,63 @@ describe('scrape token TTL', () => {
     const again = await getToken();
     assert.equal(again.source, 'scrape');
     assert.equal(calls.length, before);
+  });
+});
+
+describe('getWebToken', () => {
+  test('scrapes the web player token without calling mint', async () => {
+    route(scrapeRoutes);
+    assert.equal(await getWebToken(), SCRAPED_JWT);
+    assert.ok(calls.every((u) => !u.includes('am-mint')));
+  });
+
+  test('reuses the cached token without re-fetching', async () => {
+    route(scrapeRoutes);
+    await getWebToken();
+    const n = calls.length;
+    await getWebToken();
+    assert.equal(calls.length, n);
+  });
+
+  test('re-scrapes after invalidateWebToken', async () => {
+    route(scrapeRoutes);
+    await getWebToken();
+    const n = calls.length;
+    invalidateWebToken();
+    await getWebToken();
+    assert.ok(calls.length > n);
+  });
+
+  describe('invariants', () => {
+    test('invalidateToken leaves the web token cached', async () => {
+      route(scrapeRoutes);
+      await getWebToken();
+      const n = calls.length;
+      await invalidateToken();
+      await getWebToken();
+      assert.equal(calls.length, n);
+    });
+
+    test('web token does not replace the mint token cache', async () => {
+      route([['am-mint', () => mintOk('MINT_A')], ...scrapeRoutes]);
+      await getWebToken();
+      const t = await getToken();
+      assert.equal(t.source, 'mint');
+      assert.equal(t.token, 'MINT_A');
+    });
+  });
+
+  describe('error paths', () => {
+    test('rejects when the browse page fails', async () => {
+      route([['music.apple.com/us/browse', () => new Response('', { status: 500 })]]);
+      await assert.rejects(() => getWebToken(), /browse page: 500/);
+    });
+
+    test('does not cache a failed scrape', async () => {
+      route([['music.apple.com/us/browse', () => new Response('', { status: 500 })]]);
+      await assert.rejects(() => getWebToken());
+      route(scrapeRoutes);
+      assert.equal(await getWebToken(), SCRAPED_JWT);
+    });
   });
 });

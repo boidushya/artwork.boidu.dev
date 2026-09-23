@@ -1,14 +1,15 @@
 import type { AppleMusicSearchResponse, AppleMusicTrack, SearchResult } from './types';
-import type { TokenSource } from './token';
+import { getWebToken, invalidateWebToken, type TokenSource } from './token';
 import type { Tier } from './priority';
 import { log, Tag } from './logger';
 import { fetchAppleWithRetry, isCircuitOpen, UpstreamRateLimitedError, type AppleEndpoint } from './outboundLimiter';
 
 // Apple rate-limits search per (token, host), so edge and amp are separate budgets.
-const SEARCH_HOSTS: { name: string; base: string; endpoint: AppleEndpoint }[] = [
-  { name: 'edge', base: 'https://amp-api-edge.music.apple.com/v1', endpoint: 'searchEdge' },
-  { name: 'amp', base: 'https://amp-api.music.apple.com/v1', endpoint: 'search' },
+const SEARCH_HOSTS: { name: string; base: string; endpoint: Record<TokenSource, AppleEndpoint> }[] = [
+  { name: 'edge', base: 'https://amp-api-edge.music.apple.com/v1', endpoint: { mint: 'searchEdge', scrape: 'searchWebEdge' } },
+  { name: 'amp', base: 'https://amp-api.music.apple.com/v1', endpoint: { mint: 'search', scrape: 'searchWeb' } },
 ];
+const WEB_STOREFRONT = 'us';
 const MIN_SCORE_THRESHOLD = 0.6;
 const DURATION_MATCH_DELTA_MS = 2000;
 
@@ -39,21 +40,21 @@ export async function searchTrack(
     headers['X-Apple-Store-Front'] = storefrontId;
   }
 
-  const hosts = SEARCH_HOSTS.filter((h, i) => i === SEARCH_HOSTS.length - 1 || !isCircuitOpen(h.endpoint));
+  const hosts = SEARCH_HOSTS.filter((h, i) => i === SEARCH_HOSTS.length - 1 || !isCircuitOpen(h.endpoint[source]));
   let response: Response | undefined;
   let host = '';
   let ms = 0;
   for (const [i, h] of hosts.entries()) {
     host = h.name;
-    log.info(Tag.SEARCH, '→ apple', { host, storefront, query, mut: !!mut, albumName, duration });
+    log.info(Tag.SEARCH, '→ apple', { host, storefront, query, mut: !!mut, albumName, duration, token: source });
     const start = Date.now();
-    response = await fetchAppleWithRetry(`${h.base}${path}`, { headers }, h.endpoint, Tag.SEARCH, source, tier);
+    response = await fetchAppleWithRetry(`${h.base}${path}`, { headers }, h.endpoint[source], Tag.SEARCH, source, tier);
     ms = Date.now() - start;
     if (response.status !== 429) break;
-    log.error(Tag.SEARCH, '← 429 rate limited after retries', { host, ms });
-    if (i === hosts.length - 1) throw new UpstreamRateLimitedError('search');
+    log.error(Tag.SEARCH, '← 429 rate limited after retries', { host, ms, token: source });
+    if (i === hosts.length - 1) throw new UpstreamRateLimitedError(h.endpoint[source]);
   }
-  if (!response) throw new UpstreamRateLimitedError('search');
+  if (!response) throw new UpstreamRateLimitedError(SEARCH_HOSTS[SEARCH_HOSTS.length - 1].endpoint[source]);
 
   if (!response.ok) {
     if (response.status === 401) {
@@ -66,7 +67,7 @@ export async function searchTrack(
 
   const data: AppleMusicSearchResponse = await response.json();
   const rawTracks = data.results?.songs?.data ?? [];
-  log.info(Tag.SEARCH, '← ok', { host, status: response.status, ms, tracks: rawTracks.length });
+  log.info(Tag.SEARCH, '← ok', { host, status: response.status, ms, tracks: rawTracks.length, token: source });
 
   if (rawTracks.length === 0) {
     log.info(Tag.SEARCH, 'no results from apple');
@@ -108,6 +109,22 @@ export async function searchTrack(
     score: best.score.toFixed(3),
   });
   return best;
+}
+
+export async function searchWebLane(
+  song: string,
+  artist: string,
+  albumName: string | undefined,
+  duration: number | undefined,
+  tier: Tier
+): Promise<SearchResult | null> {
+  const token = await getWebToken();
+  try {
+    return await searchTrack(song, artist, token, WEB_STOREFRONT, albumName, duration, undefined, 'scrape', tier);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'TOKEN_EXPIRED') invalidateWebToken();
+    throw error;
+  }
 }
 
 function scoreTrack(

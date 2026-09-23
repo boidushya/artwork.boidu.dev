@@ -4,6 +4,8 @@ import { log, Tag } from './logger';
 
 const TOKEN_CACHE_KEY = 'apple_music_token';
 const SCRAPE_TOKEN_TTL_SECONDS = 150;
+const WEB_TOKEN_CACHE_KEY = 'apple_web_token';
+const WEB_TOKEN_TTL_SECONDS = 3600;
 
 const AM_MINT_URL = process.env.AM_MINT_URL || 'https://am-mint.binimum.org/token';
 const MINT_TIMEOUT_MS = 5000;
@@ -141,6 +143,26 @@ export async function getToken(env?: Env): Promise<TokenResult> {
 
   await writeCachedToken(env, result, ttlSeconds);
   return result;
+}
+
+let webTokenInFlight: Promise<string> | null = null;
+
+export async function getWebToken(): Promise<string> {
+  const cached = cache.get(WEB_TOKEN_CACHE_KEY);
+  if (cached) return cached;
+  webTokenInFlight ??= scrapeToken()
+    .then((token) => {
+      cache.set(WEB_TOKEN_CACHE_KEY, token, WEB_TOKEN_TTL_SECONDS);
+      return token;
+    })
+    .finally(() => {
+      webTokenInFlight = null;
+    });
+  return webTokenInFlight;
+}
+
+export function invalidateWebToken(): void {
+  cache.del(WEB_TOKEN_CACHE_KEY);
 }
 
 async function scrapeToken(): Promise<string> {
