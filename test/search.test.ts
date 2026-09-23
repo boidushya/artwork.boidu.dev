@@ -98,6 +98,54 @@ describe('stringSimilarity', () => {
   });
 });
 
+describe('searchTrack response shape', () => {
+  test('asks apple for server bubbles so the top hit stays in the song list', async () => {
+    let captured = '';
+    globalThis.fetch = async (url) => {
+      captured = String(url);
+      return mockSearchResponse([makeTrack()]);
+    };
+    await searchTrack('B', 'Q', 'TOKEN');
+    assert.equal(new URL(captured).searchParams.get('with'), 'serverBubbles');
+  });
+
+  test('reads tracks from the grouped results.song shape', async () => {
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ results: { song: { data: [makeTrack()] } } }), { status: 200 });
+    const result = await searchTrack('Bohemian Rhapsody', 'Queen', 'TOKEN');
+    assert.ok(result);
+    assert.equal(result.albumId, '999001');
+  });
+
+  test('reads grouped tracks without relationships via the track url', async () => {
+    const track = makeTrack();
+    delete track.relationships;
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ results: { song: { data: [track] } } }), { status: 200 });
+    const result = await searchTrack('Bohemian Rhapsody', 'Queen', 'TOKEN');
+    assert.ok(result);
+    assert.equal(result.albumId, '999001');
+  });
+
+  describe('edge cases', () => {
+    test('still reads the legacy results.songs shape', async () => {
+      globalThis.fetch = async () => mockSearchResponse([makeTrack()]);
+      const result = await searchTrack('Bohemian Rhapsody', 'Queen', 'TOKEN');
+      assert.ok(result);
+    });
+
+    test('returns null when neither group is present', async () => {
+      globalThis.fetch = async () => new Response(JSON.stringify({ results: {} }), { status: 200 });
+      assert.equal(await searchTrack('B', 'Q', 'TOKEN'), null);
+    });
+
+    test('returns null when results is missing entirely', async () => {
+      globalThis.fetch = async () => new Response(JSON.stringify({}), { status: 200 });
+      assert.equal(await searchTrack('B', 'Q', 'TOKEN'), null);
+    });
+  });
+});
+
 describe('searchTrack host fallback', () => {
   const AMP = 'https://amp-api.music.apple.com/v1';
   const EDGE = 'https://amp-api-edge.music.apple.com/v1';
