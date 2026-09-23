@@ -63,10 +63,6 @@ npm run build && npm start
 
 `DATABASE_URL` must point at a Postgres database; migrations run on startup.
 
-## Deployment
-
-Railway deploys `master` automatically. Pull requests get a preview environment.
-
 ## Apple upstream tuning
 
 | Variable | Default | Purpose |
