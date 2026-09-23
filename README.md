@@ -21,7 +21,7 @@ Calling `/` without parameters returns a short usage guide.
 | `a` | `artist` | Artist name. The primary artist is enough. |
 | `al` | `albumName` | Album name exactly as your source shows it. Leave it out when you do not know it. Never send view counts, dates or other metadata. |
 | `d` | `duration` | Track duration in whole seconds. Used to pick the right version of a track. |
-| `id` | | Numeric Apple Music album id. Other ids (for example YouTube Music ids) return `Invalid album id`. |
+| `id` | | Numeric Apple Music album id. |
 | `url` | | Apple Music album URL. |
 
 ## Responses
