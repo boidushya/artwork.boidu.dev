@@ -25,7 +25,7 @@ export const USAGE = {
     albumUrl: 'GET /?url=<music.apple.com album url>',
   },
   params: {
-    s: 'Track title only. Strip extras such as "(Official Video)", "Lyrics", "HD" or "Audio".',
+    s: 'Track title as your source shows it.',
     a: 'Artist name. The primary artist is enough.',
     al: 'Album name exactly as your source shows it. Leave it out when you do not know it. Never send view counts, dates or other metadata here.',
     d: 'Track duration in whole seconds. Used to pick the right version of a track.',
