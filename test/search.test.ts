@@ -1,6 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { searchTrack, searchWebLane, normalize, stringSimilarity } from '../src/search.ts';
+import { searchTrack, searchWebLane, normalize, stringSimilarity, titleMatches } from '../src/search.ts';
 import { invalidateWebToken } from '../src/token.ts';
 import { getCircuitState, UpstreamRateLimitedError } from '../src/outboundLimiter.ts';
 import type { AppleMusicTrack } from '../src/types.ts';
@@ -95,6 +95,89 @@ describe('stringSimilarity', () => {
   test('partial char overlap returns proportional score', () => {
     const score = stringSimilarity('cat', 'car');
     assert.ok(score > 0 && score < 1);
+  });
+});
+
+describe('titleMatches', () => {
+  test('exact title matches', () => {
+    assert.equal(titleMatches('nights', 'nights'), true);
+  });
+  test('query with extras contains the real title', () => {
+    assert.equal(titleMatches('monotonia official video', 'monotonia'), true);
+  });
+  test('real title with a feature tag contains the query', () => {
+    assert.equal(titleMatches('levitating', 'levitating feat dababy'), true);
+  });
+  test('shared meaningful word matches', () => {
+    assert.equal(titleMatches('mastodon barbarians blood audio', 'barbarians blood'), true);
+  });
+
+  describe('regressions', () => {
+    test('regression: junk title does not match an unrelated hit', () => {
+      assert.equal(titleMatches('hridayam theme', 'tik tok'), false);
+    });
+    test('regression: video title does not match a different song by the same band', () => {
+      assert.equal(titleMatches('hit that official music video', 'the kids arent alright'), false);
+    });
+    test('regression: similar letters are not enough', () => {
+      assert.equal(titleMatches('better than she can', 'best thing i never had'), false);
+    });
+  });
+
+  describe('edge cases', () => {
+    test('short titles match when equal', () => {
+      assert.equal(titleMatches('22', '22'), true);
+      assert.equal(titleMatches('up', 'up'), true);
+    });
+    test('spacing differences still match', () => {
+      assert.equal(titleMatches('berpurapura', 'berpura pura'), true);
+    });
+    test('stopwords alone do not count as a shared word', () => {
+      assert.equal(titleMatches('the end', 'the beginning'), false);
+    });
+    test('non-latin titles skip the gate', () => {
+      assert.equal(titleMatches('アイドル', 'idol'), true);
+      assert.equal(titleMatches('idol', 'アイドル'), true);
+      assert.equal(titleMatches('tum hi ho', 'तुम ही हो'), true);
+    });
+    test('accented latin titles are still gated', () => {
+      assert.equal(titleMatches(normalize('Façade'), normalize('Facade')), true);
+      assert.equal(titleMatches(normalize('Tití Me Preguntó'), normalize('Moscow Mule')), false);
+    });
+    test('empty inputs never match', () => {
+      assert.equal(titleMatches('', 'nights'), false);
+      assert.equal(titleMatches('nights', ''), false);
+    });
+  });
+});
+
+describe('searchTrack title gate', () => {
+  test('rejects a same-artist hit whose title does not match', async () => {
+    globalThis.fetch = async () =>
+      mockSearchResponse([makeTrack({ name: 'Tik Tok', artistName: 'Hesham Abdul Wahab' })]);
+    assert.equal(await searchTrack('Hridayam Theme', 'Hesham Abdul Wahab', 'TOKEN'), null);
+  });
+
+  test('keeps a track whose album matches when the query is an album name', async () => {
+    globalThis.fetch = async () =>
+      mockSearchResponse([makeTrack({ name: 'Breed', artistName: 'Nirvana', albumName: 'Nevermind' })]);
+    const result = await searchTrack('Nevermind', 'Nirvana', 'TOKEN');
+    assert.ok(result);
+  });
+
+  test('rejects when neither the title nor the album matches', async () => {
+    globalThis.fetch = async () =>
+      mockSearchResponse([makeTrack({ name: 'Roll Up', artistName: 'Wiz Khalifa', albumName: 'Rolling Papers' })]);
+    assert.equal(await searchTrack('Flight School', 'Wiz Khalifa', 'TOKEN'), null);
+  });
+
+  test('picks the matching title over a higher ranked unrelated one', async () => {
+    const wrong = makeTrack({ name: 'Seigfried', artistName: 'Frank Ocean', albumName: 'Blonde' }, 'wrong');
+    const right = makeTrack({ name: 'Nights', artistName: 'Frank Ocean', albumName: 'Blonde' }, 'right');
+    globalThis.fetch = async () => mockSearchResponse([wrong, right]);
+    const result = await searchTrack('Nights', 'Frank Ocean', 'TOKEN', 'vn', 'Blonde');
+    assert.ok(result);
+    assert.equal(result.track.id, 'right');
   });
 });
 

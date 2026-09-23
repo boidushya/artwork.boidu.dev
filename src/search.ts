@@ -153,6 +153,10 @@ function scoreTrack(
   const searchSong = normalize(querySong);
   const searchArtist = normalize(queryArtist);
 
+  if (!titleMatches(searchSong, trackName) && !titleMatches(searchSong, trackAlbum)) {
+    return null;
+  }
+
   const songSim = stringSimilarity(trackName, searchSong);
   const artistSim = stringSimilarity(trackArtist, searchArtist);
 
@@ -183,6 +187,20 @@ function scoreTrack(
     albumId,
     score,
   };
+}
+
+const TITLE_STOPWORDS = new Set(['the', 'and', 'feat', 'with', 'you', 'for', 'from', 'version']);
+const NON_LATIN_LETTER = /[^\P{L}\p{Script=Latin}]/u;
+
+// Letter-frequency similarity rates unrelated titles as close, so require real overlap first.
+export function titleMatches(searchSong: string, trackName: string): boolean {
+  if (!searchSong || !trackName) return false;
+  if (NON_LATIN_LETTER.test(searchSong) || NON_LATIN_LETTER.test(trackName)) return true;
+  const a = searchSong.replace(/ /g, '');
+  const b = trackName.replace(/ /g, '');
+  if (a.includes(b) || b.includes(a)) return true;
+  const trackWords = new Set(trackName.split(' '));
+  return searchSong.split(' ').some((w) => w.length >= 3 && !TITLE_STOPWORDS.has(w) && trackWords.has(w));
 }
 
 export function stringSimilarity(s1: string, s2: string): number {
