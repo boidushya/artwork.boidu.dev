@@ -1,6 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { searchTrack, normalize, stringSimilarity } from '../src/search.ts';
+import { searchTrack, searchApiBase, normalize, stringSimilarity } from '../src/search.ts';
 import type { AppleMusicTrack } from '../src/types.ts';
 
 let originalFetch: typeof globalThis.fetch;
@@ -93,6 +93,38 @@ describe('stringSimilarity', () => {
   test('partial char overlap returns proportional score', () => {
     const score = stringSimilarity('cat', 'car');
     assert.ok(score > 0 && score < 1);
+  });
+});
+
+describe('searchApiBase', () => {
+  const AMP = 'https://amp-api.music.apple.com/v1';
+  const EDGE = 'https://amp-api-edge.music.apple.com/v1';
+
+  test('0 percent always routes to amp-api', () => {
+    assert.equal(searchApiBase(0, 0), AMP);
+    assert.equal(searchApiBase(0, 0.999), AMP);
+  });
+
+  test('100 percent always routes to edge', () => {
+    assert.equal(searchApiBase(100, 0), EDGE);
+    assert.equal(searchApiBase(100, 0.999), EDGE);
+  });
+
+  test('50 percent splits on the roll', () => {
+    assert.equal(searchApiBase(50, 0.49), EDGE);
+    assert.equal(searchApiBase(50, 0.5), AMP);
+  });
+
+  describe('edge cases', () => {
+    test('NaN percent from a malformed env var falls back to amp-api', () => {
+      assert.equal(searchApiBase(NaN, 0), AMP);
+    });
+    test('negative percent routes to amp-api', () => {
+      assert.equal(searchApiBase(-10, 0), AMP);
+    });
+    test('percent above 100 routes to edge', () => {
+      assert.equal(searchApiBase(150, 0.999), EDGE);
+    });
   });
 });
 
