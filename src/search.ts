@@ -198,7 +198,7 @@ export function titleMatches(searchSong: string, trackName: string): boolean {
   if (NON_LATIN_LETTER.test(searchSong) || NON_LATIN_LETTER.test(trackName)) return true;
   const a = searchSong.replace(/ /g, '');
   const b = trackName.replace(/ /g, '');
-  if (a.includes(b) || b.includes(a)) return true;
+  if (b.includes(a) || (b.length >= 3 && a.includes(b))) return true;
   const trackWords = new Set(trackName.split(' '));
   return searchSong.split(' ').some((w) => w.length >= 3 && !TITLE_STOPWORDS.has(w) && trackWords.has(w));
 }

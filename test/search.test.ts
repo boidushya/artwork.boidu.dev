@@ -129,6 +129,12 @@ describe('titleMatches', () => {
       assert.equal(titleMatches('22', '22'), true);
       assert.equal(titleMatches('up', 'up'), true);
     });
+    test('a very short track title does not match inside a longer query', () => {
+      assert.equal(titleMatches('hridayam theme', 'me'), false);
+    });
+    test('a short query still matches a longer track title', () => {
+      assert.equal(titleMatches('up', 'up feat demi lovato'), true);
+    });
     test('spacing differences still match', () => {
       assert.equal(titleMatches('berpurapura', 'berpura pura'), true);
     });
