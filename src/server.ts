@@ -19,6 +19,7 @@ import {
 import { artworkRateLimit, mintRateLimit } from './rateLimit';
 import { UpstreamRateLimitedError } from './outboundLimiter';
 import { TransientUpstreamError, errorHttpResponse, USAGE } from './errors';
+import { cacheControlFor } from './httpCache';
 import type { TokenResult } from './token';
 import { resolveTier, mintToken, gatingEnabled } from './priority';
 import type { Tier } from './priority';
@@ -106,7 +107,7 @@ async function handleArtwork(c: any): Promise<Response> {
   try {
     const tier = priorityEnabled() ? resolveTier(c.req.header('authorization') ?? null) : 'priority';
     const result = await handleArtworkRequest(c.req.url, tier);
-    return c.json(result);
+    return jsonWithCache(c, result, 200);
   } catch (error) {
     if (error instanceof UpstreamRateLimitedError) {
       log.warn(Tag.HTTP, 'upstream rate limited → 503', { endpoint: error.endpoint });
@@ -116,8 +117,14 @@ async function handleArtwork(c: any): Promise<Response> {
       log.error(Tag.HTTP, 'unhandled request error', error);
     }
     const { status, body } = errorHttpResponse(error);
-    return c.json(body, status);
+    return jsonWithCache(c, body, status);
   }
+}
+
+function jsonWithCache(c: any, body: object, status: 200 | 500 | 502 | 503): Response {
+  const cacheControl = cacheControlFor(status, body);
+  if (cacheControl) c.header('Cache-Control', cacheControl);
+  return c.json(body, status);
 }
 
 async function handleArtworkRequest(
