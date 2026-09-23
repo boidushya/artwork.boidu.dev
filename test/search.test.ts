@@ -1,6 +1,7 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { searchTrack, searchApiBase, normalize, stringSimilarity } from '../src/search.ts';
+import { searchTrack, normalize, stringSimilarity } from '../src/search.ts';
+import { UpstreamRateLimitedError } from '../src/outboundLimiter.ts';
 import type { AppleMusicTrack } from '../src/types.ts';
 
 let originalFetch: typeof globalThis.fetch;
@@ -96,34 +97,73 @@ describe('stringSimilarity', () => {
   });
 });
 
-describe('searchApiBase', () => {
+describe('searchTrack host fallback', () => {
   const AMP = 'https://amp-api.music.apple.com/v1';
   const EDGE = 'https://amp-api-edge.music.apple.com/v1';
 
-  test('0 percent always routes to amp-api', () => {
-    assert.equal(searchApiBase(0, 0), AMP);
-    assert.equal(searchApiBase(0, 0.999), AMP);
+  test('tries amp-api-edge first', async () => {
+    const urls: string[] = [];
+    globalThis.fetch = async (url) => {
+      urls.push(String(url));
+      return mockSearchResponse([makeTrack()]);
+    };
+    const result = await searchTrack('Bohemian Rhapsody', 'Queen', 'TOKEN');
+    assert.ok(result);
+    assert.equal(urls.length, 1);
+    assert.ok(urls[0].startsWith(`${EDGE}/catalog/vn/search?`));
   });
 
-  test('100 percent always routes to edge', () => {
-    assert.equal(searchApiBase(100, 0), EDGE);
-    assert.equal(searchApiBase(100, 0.999), EDGE);
+  test('spills to amp-api with the same path when edge returns 429', async () => {
+    const urls: string[] = [];
+    globalThis.fetch = async (url) => {
+      urls.push(String(url));
+      return String(url).startsWith(EDGE) ? new Response('', { status: 429 }) : mockSearchResponse([makeTrack()]);
+    };
+    const result = await searchTrack('Bohemian Rhapsody', 'Queen', 'TOKEN');
+    assert.ok(result);
+    assert.equal(result.albumId, '999001');
+    const last = urls[urls.length - 1];
+    assert.ok(last.startsWith(AMP));
+    assert.equal(last.slice(AMP.length), urls[0].slice(EDGE.length));
   });
 
-  test('50 percent splits on the roll', () => {
-    assert.equal(searchApiBase(50, 0.49), EDGE);
-    assert.equal(searchApiBase(50, 0.5), AMP);
+  test('spill sends the same auth and storefront headers', async () => {
+    const seen: Record<string, string>[] = [];
+    globalThis.fetch = async (url, init) => {
+      seen.push((init?.headers as Record<string, string>) ?? {});
+      return String(url).startsWith(EDGE) ? new Response('', { status: 429 }) : mockSearchResponse([makeTrack()]);
+    };
+    await searchTrack('B', 'Q', 'JWT', 'pl', undefined, undefined, 'MUT', 'mint', 'priority', '143478-2,31');
+    assert.deepEqual(seen[seen.length - 1], seen[0]);
   });
 
-  describe('edge cases', () => {
-    test('NaN percent from a malformed env var falls back to amp-api', () => {
-      assert.equal(searchApiBase(NaN, 0), AMP);
+  describe('error paths', () => {
+    test('throws UpstreamRateLimitedError for search when both hosts return 429', async () => {
+      globalThis.fetch = async () => new Response('', { status: 429 });
+      await assert.rejects(
+        () => searchTrack('B', 'Q', 'TOKEN'),
+        (err) => err instanceof UpstreamRateLimitedError && err.endpoint === 'search'
+      );
     });
-    test('negative percent routes to amp-api', () => {
-      assert.equal(searchApiBase(-10, 0), AMP);
+
+    test('does not spill on edge 401', async () => {
+      const urls: string[] = [];
+      globalThis.fetch = async (url) => {
+        urls.push(String(url));
+        return new Response('', { status: 401 });
+      };
+      await assert.rejects(() => searchTrack('B', 'Q', 'TOKEN'), /TOKEN_EXPIRED/);
+      assert.ok(urls.every((u) => u.startsWith(EDGE)));
     });
-    test('percent above 100 routes to edge', () => {
-      assert.equal(searchApiBase(150, 0.999), EDGE);
+
+    test('does not spill on edge 5xx', async () => {
+      const urls: string[] = [];
+      globalThis.fetch = async (url) => {
+        urls.push(String(url));
+        return new Response('', { status: 500 });
+      };
+      await assert.rejects(() => searchTrack('B', 'Q', 'TOKEN'), /Search failed: 500/);
+      assert.ok(urls.every((u) => u.startsWith(EDGE)));
     });
   });
 });
@@ -136,7 +176,7 @@ describe('searchTrack', () => {
       return mockSearchResponse([makeTrack()]);
     };
     await searchTrack('Bohemian Rhapsody', 'Queen', 'TOKEN');
-    assert.match(captured, /^https:\/\/amp-api\.music\.apple\.com\/v1\/catalog\/vn\/search/);
+    assert.match(captured, /\/v1\/catalog\/vn\/search/);
   });
 
   test('uses provided storefront in URL', async () => {
