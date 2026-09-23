@@ -202,6 +202,46 @@ describe('getToken', () => {
   });
 });
 
+describe('getToken concurrency', () => {
+  test('parallel callers on a cold cache share one mint', async () => {
+    route([['am-mint', () => mintOk('MINT_SHARED')]]);
+    const results = await Promise.all(Array.from({ length: 20 }, () => getToken()));
+    assert.equal(calls.filter((u) => u.includes('am-mint')).length, 1);
+    assert.ok(results.every((r) => r.token === 'MINT_SHARED' && r.source === 'mint'));
+  });
+
+  test('parallel callers share one scrape when mint fails', async () => {
+    route([['am-mint', () => { throw new Error('down'); }], ...scrapeRoutes]);
+    const results = await Promise.all(Array.from({ length: 10 }, () => getToken()));
+    assert.equal(calls.filter((u) => u.includes('am-mint')).length, 1);
+    assert.equal(calls.filter((u) => u.includes('/us/browse')).length, 1);
+    assert.ok(results.every((r) => r.source === 'scrape'));
+  });
+
+  describe('error paths', () => {
+    test('a failed refresh is not reused by the next caller', async () => {
+      route([
+        ['am-mint', () => { throw new Error('down'); }],
+        ['music.apple.com/us/browse', () => new Response('', { status: 500 })],
+      ]);
+      await assert.rejects(() => getToken());
+      route([['am-mint', () => mintOk('MINT_AFTER')]]);
+      const r = await getToken();
+      assert.equal(r.token, 'MINT_AFTER');
+    });
+
+    test('all parallel callers see the same failure', async () => {
+      route([
+        ['am-mint', () => { throw new Error('down'); }],
+        ['music.apple.com/us/browse', () => new Response('', { status: 500 })],
+      ]);
+      const settled = await Promise.allSettled(Array.from({ length: 5 }, () => getToken()));
+      assert.ok(settled.every((s) => s.status === 'rejected'));
+      assert.equal(calls.filter((u) => u.includes('am-mint')).length, 1);
+    });
+  });
+});
+
 describe('scrape token TTL', () => {
   test('scrape fallback re-mints within minutes, not an hour', async (t) => {
     t.mock.timers.enable({ apis: ['Date'] });

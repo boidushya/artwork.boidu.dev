@@ -119,13 +119,21 @@ async function mintToken(): Promise<{ token: string; ttlSeconds: number; storefr
   };
 }
 
+let tokenInFlight: Promise<TokenResult> | null = null;
+
 export async function getToken(env?: Env): Promise<TokenResult> {
   const cached = await readCachedToken(env);
   if (cached) {
     log.debug(Tag.TOKEN, `cache hit (${env?.CACHE ? 'kv' : 'memory'})`, { source: cached.source });
     return cached;
   }
+  tokenInFlight ??= refreshToken(env).finally(() => {
+    tokenInFlight = null;
+  });
+  return tokenInFlight;
+}
 
+async function refreshToken(env?: Env): Promise<TokenResult> {
   let result: TokenResult;
   let ttlSeconds: number;
   try {
