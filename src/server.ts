@@ -18,6 +18,7 @@ import {
 } from './resultCache';
 import { artworkRateLimit, mintRateLimit } from './rateLimit';
 import { UpstreamRateLimitedError } from './outboundLimiter';
+import { TransientUpstreamError, errorHttpResponse, USAGE } from './errors';
 import type { TokenResult } from './token';
 import { resolveTier, mintToken, gatingEnabled } from './priority';
 import type { Tier } from './priority';
@@ -109,11 +110,13 @@ async function handleArtwork(c: any): Promise<Response> {
   } catch (error) {
     if (error instanceof UpstreamRateLimitedError) {
       log.warn(Tag.HTTP, 'upstream rate limited → 503', { endpoint: error.endpoint });
-      return c.json({ error: 'Upstream rate limited, try again shortly' }, 503);
+    } else if (error instanceof TransientUpstreamError) {
+      log.warn(Tag.HTTP, 'transient upstream failure → 502', { error: error.message });
+    } else {
+      log.error(Tag.HTTP, 'unhandled request error', error);
     }
-    log.error(Tag.HTTP, 'unhandled request error', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return c.json({ error: message }, 500);
+    const { status, body } = errorHttpResponse(error);
+    return c.json(body, status);
   }
 }
 
@@ -174,7 +177,7 @@ async function handleArtworkRequest(
         trackName = crossSearch.trackName;
         trackArtist = crossSearch.trackArtist;
       } else if (!tokenResult) {
-        return { error: 'Failed to authenticate with Apple Music' };
+        throw new TransientUpstreamError('Failed to authenticate with Apple Music');
       } else {
         try {
           const searchResult = await searchWithRetry(song, artist, tokenResult, storefront, albumName, duration, tier);
@@ -201,15 +204,13 @@ async function handleArtworkRequest(
             trackArtist = stale.trackArtist;
           } else {
             log.error(Tag.SEARCH, 'search failed', error);
-            return { error: 'Search failed' };
+            throw new TransientUpstreamError('Search failed');
           }
         }
       }
     }
   } else {
-    return {
-      error: 'Missing parameters. Use: ?s=song&a=artist, ?id=albumId, or ?url=appleMusicUrl',
-    };
+    return USAGE;
   }
 
   const cachedAlbum = await getAlbumCache(storefront, resolvedAlbumId);
@@ -226,7 +227,7 @@ async function handleArtworkRequest(
   }
 
   if (!tokenResult) {
-    return { error: 'Failed to authenticate with Apple Music' };
+    throw new TransientUpstreamError('Failed to authenticate with Apple Music');
   }
 
   try {
@@ -286,7 +287,7 @@ async function handleArtworkRequest(
       throw error;
     }
     log.error(Tag.ALBUM, 'fetch failed', error);
-    return { error: 'Failed to fetch album data' };
+    throw new TransientUpstreamError('Failed to fetch album data');
   }
 }
 
