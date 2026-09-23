@@ -26,7 +26,7 @@ export async function searchTrack(
   storefrontId?: string
 ): Promise<SearchResult | null> {
   const query = `${song} ${artist}`.trim();
-  const path = `/catalog/${storefront}/search?term=${encodeURIComponent(query)}&types=songs&limit=10`;
+  const path = `/catalog/${storefront}/search?term=${encodeURIComponent(query)}&types=songs&limit=10&with=serverBubbles`;
 
   const headers: Record<string, string> = {
     'Authorization': `Bearer ${token}`,
@@ -66,7 +66,7 @@ export async function searchTrack(
   }
 
   const data: AppleMusicSearchResponse = await response.json();
-  const rawTracks = data.results?.songs?.data ?? [];
+  const rawTracks = data.results?.song?.data ?? data.results?.songs?.data ?? [];
   log.info(Tag.SEARCH, '← ok', { host, status: response.status, ms, tracks: rawTracks.length, token: source });
 
   if (rawTracks.length === 0) {

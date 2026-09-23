@@ -18,7 +18,10 @@ export interface ErrorResponse {
 }
 
 export interface AppleMusicSearchResponse {
-  results: {
+  results?: {
+    song?: {
+      data: AppleMusicTrack[];
+    };
     songs?: {
       data: AppleMusicTrack[];
     };
