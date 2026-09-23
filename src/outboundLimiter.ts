@@ -17,7 +17,7 @@ const PRIORITY_RESERVE = parseInt(process.env.APPLE_PRIORITY_RESERVE || '2', 10)
 const STANDARD_MAX_QUEUE_WAIT_MS = parseInt(process.env.APPLE_STANDARD_MAX_WAIT_MS || '1500', 10);
 const PRIORITY_ACTIVE_WINDOW_MS = parseInt(process.env.APPLE_PRIORITY_WINDOW_MS || '5000', 10);
 
-export type AppleEndpoint = 'search' | 'album';
+export type AppleEndpoint = 'search' | 'searchEdge' | 'album';
 
 export class UpstreamRateLimitedError extends Error {
   constructor(public readonly endpoint: AppleEndpoint) {
@@ -36,6 +36,7 @@ export interface CircuitBreaker {
   check(endpoint: AppleEndpoint): void;
   recordSuccess(endpoint: AppleEndpoint): void;
   recordFailure(endpoint: AppleEndpoint): void;
+  isOpen(endpoint: AppleEndpoint): boolean;
   stateOf(endpoint: AppleEndpoint): Readonly<CircuitState>;
 }
 
@@ -49,6 +50,7 @@ export function createCircuitBreaker(opts: {
   const now = opts.now ?? Date.now;
   const states: Record<AppleEndpoint, CircuitState> = {
     search: { consecutiveFailures: 0, trips: 0, openUntil: 0 },
+    searchEdge: { consecutiveFailures: 0, trips: 0, openUntil: 0 },
     album: { consecutiveFailures: 0, trips: 0, openUntil: 0 },
   };
 
@@ -102,6 +104,9 @@ export function createCircuitBreaker(opts: {
           threshold: opts.threshold,
         });
       }
+    },
+    isOpen(endpoint) {
+      return now() < states[endpoint].openUntil;
     },
     stateOf(endpoint) {
       return { ...states[endpoint] };
@@ -249,6 +254,10 @@ export async function fetchAppleWithRetry(
     circuitBreaker.recordSuccess(endpoint);
     return res;
   }
+}
+
+export function isCircuitOpen(endpoint: AppleEndpoint): boolean {
+  return circuitBreaker.isOpen(endpoint);
 }
 
 // TODO: wire into a /metrics or /health endpoint. Kept exported so the hook

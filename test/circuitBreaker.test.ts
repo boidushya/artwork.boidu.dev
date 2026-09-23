@@ -220,6 +220,40 @@ describe('createCircuitBreaker — per-endpoint isolation', () => {
   });
 });
 
+describe('createCircuitBreaker isOpen', () => {
+  test('closed breaker is not open', () => {
+    const cb = makeBreaker(makeClock());
+    assert.equal(cb.isOpen('searchEdge'), false);
+  });
+
+  test('open during cooldown, closed after it', () => {
+    const clock = makeClock();
+    const cb = makeBreaker(clock, { threshold: 1, baseOpenMs: 60_000 });
+    cb.recordFailure('searchEdge');
+    assert.equal(cb.isOpen('searchEdge'), true);
+    clock.advance(60_000);
+    assert.equal(cb.isOpen('searchEdge'), false);
+  });
+
+  test('does not mutate state', () => {
+    const clock = makeClock();
+    const cb = makeBreaker(clock, { threshold: 1, baseOpenMs: 60_000 });
+    cb.recordFailure('searchEdge');
+    clock.advance(60_000);
+    const before = cb.stateOf('searchEdge');
+    cb.isOpen('searchEdge');
+    assert.deepEqual(cb.stateOf('searchEdge'), before);
+  });
+
+  test('edge search and amp search trip independently', () => {
+    const cb = makeBreaker(makeClock(), { threshold: 1 });
+    cb.recordFailure('searchEdge');
+    assert.equal(cb.isOpen('searchEdge'), true);
+    assert.equal(cb.isOpen('search'), false);
+    assert.doesNotThrow(() => cb.check('search'));
+  });
+});
+
 describe('UpstreamRateLimitedError carries endpoint from check()', () => {
   test('thrown error has correct endpoint name', () => {
     const clock = makeClock();
