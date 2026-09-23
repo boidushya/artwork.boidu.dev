@@ -1,6 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchAlbum, parseAlbumIdFromUrl } from '../src/album.ts';
+import { fetchAlbum, isAppleAlbumId, parseAlbumIdFromUrl } from '../src/album.ts';
 import type { AppleMusicAlbum } from '../src/types.ts';
 
 let originalFetch: typeof globalThis.fetch;
@@ -29,6 +29,33 @@ function mockAlbumResponse(album: Partial<AppleMusicAlbum>, status = 200): Respo
   };
   return new Response(JSON.stringify({ data: [full] }), { status });
 }
+
+describe('isAppleAlbumId', () => {
+  test('accepts a numeric apple album id', () => {
+    assert.equal(isAppleAlbumId('1440870373'), true);
+  });
+
+  describe('edge cases', () => {
+    test('rejects youtube music browse ids', () => {
+      assert.equal(isAppleAlbumId('MPREb_9ul1GFpeaQA'), false);
+    });
+    test('rejects empty input', () => {
+      assert.equal(isAppleAlbumId(''), false);
+    });
+    test('rejects surrounding whitespace', () => {
+      assert.equal(isAppleAlbumId(' 1440870373'), false);
+    });
+    test('rejects mixed digits and letters', () => {
+      assert.equal(isAppleAlbumId('144087a373'), false);
+    });
+    test('rejects non-ascii digits', () => {
+      assert.equal(isAppleAlbumId('١٢٣٤'), false);
+    });
+    test('rejects path traversal', () => {
+      assert.equal(isAppleAlbumId('123/../456'), false);
+    });
+  });
+});
 
 describe('parseAlbumIdFromUrl', () => {
   test('extracts album id from canonical URL with name slug', () => {

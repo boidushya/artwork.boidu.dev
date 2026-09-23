@@ -168,7 +168,10 @@ export function bucketForSource(source: TokenSource): TokenBucket {
 }
 
 export class QueueTimeoutError extends Error {
-  constructor(public readonly waitedMs: number) {
+  constructor(
+    public readonly waitedMs: number,
+    public readonly maxWaitMs: number
+  ) {
     super(`outbound throttle queue wait exceeded ${waitedMs}ms`);
     this.name = 'QueueTimeoutError';
   }
@@ -197,7 +200,7 @@ export async function acquireAppleSlot(
     }
     const waited = Date.now() - start;
     if (waited >= cap) {
-      throw new QueueTimeoutError(waited);
+      throw new QueueTimeoutError(waited, cap);
     }
     const tokenWaitMs = bucket.msUntilNextToken(Date.now(), reserve);
     const sleepMs = Math.min(tokenWaitMs, cap - waited);
@@ -225,7 +228,7 @@ export async function fetchAppleWithRetry(
           endpoint,
           source,
           waitedMs: err.waitedMs,
-          maxWaitMs: MAX_QUEUE_WAIT_MS,
+          maxWaitMs: err.maxWaitMs,
         });
         throw new UpstreamRateLimitedError(endpoint);
       }

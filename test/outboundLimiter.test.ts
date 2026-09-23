@@ -143,15 +143,20 @@ describe('UpstreamRateLimitedError', () => {
 
 describe('QueueTimeoutError', () => {
   test('carries waitedMs and is identifiable via instanceof', () => {
-    const err = new QueueTimeoutError(12345);
+    const err = new QueueTimeoutError(12345, 10000);
     assert.ok(err instanceof QueueTimeoutError);
     assert.ok(err instanceof Error);
     assert.equal(err.waitedMs, 12345);
     assert.match(err.message, /12345/);
   });
 
+  test('carries the wait cap that applied', () => {
+    const err = new QueueTimeoutError(1502, 1500);
+    assert.equal(err.maxWaitMs, 1500);
+  });
+
   test('preserves error name', () => {
-    const err = new QueueTimeoutError(0);
+    const err = new QueueTimeoutError(0, 0);
     assert.equal(err.name, 'QueueTimeoutError');
   });
 });

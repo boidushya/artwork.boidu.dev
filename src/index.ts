@@ -2,7 +2,7 @@ import type { Env, ArtworkResponse, ErrorResponse } from './types';
 import { getToken, invalidateToken, storefrontHeaderId } from './token';
 import type { TokenResult, TokenSource } from './token';
 import { searchTrack } from './search';
-import { fetchAlbum, parseAlbumIdFromUrl } from './album';
+import { fetchAlbum, isAppleAlbumId, parseAlbumIdFromUrl } from './album';
 import { resolveVideoUrl } from './m3u8';
 
 export default {
@@ -70,6 +70,7 @@ async function handleArtworkRequest(
 
   // Route 1: Direct album ID
   if (albumId) {
+    if (!isAppleAlbumId(albumId)) return { error: 'Invalid album id' };
     resolvedAlbumId = albumId;
   }
   // Route 2: Apple Music URL
