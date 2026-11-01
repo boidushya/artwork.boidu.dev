@@ -217,7 +217,8 @@ export function resolve(src: TrackInput, candidates: SpotifyCandidate[]): Resolv
     })
     .map((c) => score(src, c))
     .filter(isPlausible)
-    .sort((a, b) => b.score - a.score || a.durationDelta - b.durationDelta || (a.candidate.id < b.candidate.id ? -1 : 1));
+    // Stable sort: full ties keep search rank, where Spotify lists the canonical copy first.
+    .sort((a, b) => b.score - a.score || a.durationDelta - b.durationDelta);
 
   let winner = ranked[0];
   if (!winner) return { kind: 'notFound' };

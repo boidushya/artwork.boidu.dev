@@ -204,13 +204,18 @@ describe('resolve', () => {
   });
 
   describe('invariants', () => {
-    test('result does not depend on candidate order', () => {
+    test('identical copies resolve to the earliest search result', () => {
       const source: TrackInput = { title: 'Levitating', artist: 'Dua Lipa', album: 'Future Nostalgia', durationMs: 203000 };
       const candidates = loadLevitatingCandidates();
-      const a = resolve(source, candidates);
-      const b = resolve(source, [...candidates].reverse());
-      assert.equal(a.kind, 'matched');
-      assert.deepEqual(a, b);
+      const first = resolve(source, candidates);
+      assert.equal(first.kind === 'matched' && first.track.candidate.id, '39LLxExYz6ewLAcYrzQQyP');
+      const reversed = resolve(source, [...candidates].reverse());
+      assert.equal(reversed.kind === 'matched' && reversed.track.candidate.id, '1dI77VhaLcQSgQLSnIs03D');
+    });
+
+    test('the same input always gives the same result', () => {
+      const source: TrackInput = { title: 'Levitating', artist: 'Dua Lipa', album: 'Future Nostalgia', durationMs: 203000 };
+      assert.deepEqual(resolve(source, loadLevitatingCandidates()), resolve(source, loadLevitatingCandidates()));
     });
 
     test('score stays within 0..100', () => {
