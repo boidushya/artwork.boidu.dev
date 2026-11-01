@@ -85,6 +85,10 @@ function parseEmbedSession(html: string): { token: string; expiresAt: number } |
   return { token: s.accessToken, expiresAt: s.accessTokenExpirationTimestampMs };
 }
 
+function discardBody(res: Response): void {
+  res.body?.cancel().catch((error) => log.debug(Tag.SPOTIFY, 'response body cancel failed', error));
+}
+
 async function readJson<T>(res: Response, what: string): Promise<T> {
   try {
     return (await res.json()) as T;
@@ -121,12 +125,12 @@ export async function searchSpotify(query: string, tier: Tier): Promise<SpotifyC
   const ms = Date.now() - start;
   if (res.status === 429) {
     log.error(Tag.SPOTIFY, '← 429 rate limited', { ms });
-    await res.body?.cancel();
+    discardBody(res);
     throw new UpstreamRateLimitedError('spotifySearch');
   }
   if (!res.ok) {
     log.error(Tag.SPOTIFY, '← error', { status: res.status, ms });
-    await res.body?.cancel();
+    discardBody(res);
     throw new TransientUpstreamError(`Spotify search HTTP ${res.status}`);
   }
 
@@ -142,13 +146,19 @@ export async function searchSpotify(query: string, tier: Tier): Promise<SpotifyC
   }
 
   const candidates: SpotifyCandidate[] = [];
+  let malformedIds = 0;
   for (const entry of items) {
     const d = entry?.item?.data;
     const id = d?.id ?? d?.uri?.split(':').pop();
+    if (id && !TRACK_ID.test(id)) malformedIds++;
     const artists = (d?.artists?.items ?? []).map((a) => a?.profile?.name).filter((n): n is string => Boolean(n));
     const durationMs = d?.duration?.totalMilliseconds;
     if (!id || !TRACK_ID.test(id) || !d?.name || artists.length === 0 || typeof durationMs !== 'number') continue;
     candidates.push({ id, title: d.name, artists, album: d.albumOfTrack?.name ?? '', durationMs });
+  }
+  if (candidates.length === 0 && malformedIds > 0) {
+    log.error(Tag.SPOTIFY, 'search response track id format changed', { malformedIds });
+    throw new TransientUpstreamError('Spotify search response shape changed');
   }
   log.info(Tag.SPOTIFY, '← ok', { ms, tracks: candidates.length });
   return candidates;
@@ -173,7 +183,7 @@ async function searchWithToken(url: string, token: string, tier: Tier): Promise<
   );
   if (res.status === 401) {
     invalidateSpotifyToken(token);
-    await res.body?.cancel();
+    discardBody(res);
   }
   return res;
 }
@@ -191,12 +201,12 @@ export async function fetchCanvasUrl(trackId: string, tier: Tier): Promise<strin
   const ms = Date.now() - start;
   if (res.status === 429) {
     log.error(Tag.CANVAS, '← 429 rate limited', { trackId, ms });
-    await res.body?.cancel();
+    discardBody(res);
     throw new UpstreamRateLimitedError('canvasStore');
   }
   if (res.status !== 200) {
     log.error(Tag.CANVAS, '← error', { trackId, status: res.status, ms });
-    await res.body?.cancel();
+    discardBody(res);
     throw new TransientUpstreamError(`Canvas store HTTP ${res.status}`);
   }
   const body = await readJson<{ data?: Record<string, { url?: unknown } | null> }>(res, 'Canvas store');

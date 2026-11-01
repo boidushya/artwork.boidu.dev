@@ -169,13 +169,11 @@ describe('searchSpotify', () => {
       assert.equal(candidates.length, 15);
     });
 
-    test('regression: candidates with a malformed track id are dropped so another can win', async () => {
+    test('an empty result list is a plain empty answer', async () => {
       const body = JSON.parse(SEARCH);
-      body.data.searchV2.tracksV2.items[0].item.data.id = 'not-a-track-id';
+      body.data.searchV2.tracksV2.items = [];
       stub({ embed: ok(EMBED), search: ok(JSON.stringify(body)) });
-      const candidates = await searchSpotify('x', 'priority');
-      assert.equal(candidates.length, 19);
-      assert.ok(candidates.every((c) => /^[A-Za-z0-9]{22}$/.test(c.id)));
+      assert.deepEqual(await searchSpotify('x', 'priority'), []);
     });
 
     test('falls back to the uri when id is missing', async () => {
@@ -187,6 +185,25 @@ describe('searchSpotify', () => {
   });
 
   describe('regressions', () => {
+    test('regression: candidates with a malformed track id are dropped so another can win', async () => {
+      const body = JSON.parse(SEARCH);
+      body.data.searchV2.tracksV2.items[0].item.data.id = 'not-a-track-id';
+      stub({ embed: ok(EMBED), search: ok(JSON.stringify(body)) });
+      const candidates = await searchSpotify('x', 'priority');
+      assert.equal(candidates.length, 19);
+      assert.ok(candidates.every((c) => /^[A-Za-z0-9]{22}$/.test(c.id)));
+    });
+
+    test('regression: a response where every id is malformed is a failure, not a cached miss', async () => {
+      const body = JSON.parse(SEARCH);
+      for (const entry of body.data.searchV2.tracksV2.items) {
+        entry.item.data.id = 'spotify-track-v2-format';
+        entry.item.data.uri = 'spotify:track:v2-format';
+      }
+      stub({ embed: ok(EMBED), search: ok(JSON.stringify(body)) });
+      await assert.rejects(searchSpotify('x', 'priority'), TransientUpstreamError);
+    });
+
     test('regression: search terms are cut to the 250 character API limit without splitting a character', async () => {
       stub({ embed: ok(EMBED), search: ok(SEARCH) });
       for (const query of ['a'.repeat(400), `${'x'.repeat(249)}\u{1F480}tail`, '\u{1F480}'.repeat(200)]) {
@@ -314,28 +331,37 @@ describe('matchTrack', () => {
     assert.equal(canvasCalls().length, 0);
   });
 
-  test('regression: a failed query stops the loop instead of spending more calls on a failing upstream', async () => {
-    let n = 0;
-    stub({ embed: ok(EMBED), search: () => (n++ === 0 ? new Response('', { status: 500 }) : new Response(SEARCH)) });
-    await assert.rejects(matchTrack(LEVITATING, 'priority'), TransientUpstreamError);
-    assert.equal(searchCalls().length, 1);
-  });
-
-  test('regression: a timed out query stops the loop', async () => {
-    stub({
-      embed: ok(EMBED),
-      search: () => {
-        throw new DOMException('timed out', 'TimeoutError');
-      },
-    });
-    await assert.rejects(matchTrack(LEVITATING, 'priority'));
-    assert.equal(searchCalls().length, 1);
-  });
-
   test('no match on any query is null', async () => {
     stub({ embed: ok(EMBED), search: ok(SEARCH) });
     assert.equal(await matchTrack(SANDMAN, 'priority'), null);
     assert.equal(searchCalls().length, 2);
+  });
+
+  describe('regressions', () => {
+    test('regression: a failed query stops the loop instead of spending more calls on a failing upstream', async () => {
+      let n = 0;
+      stub({ embed: ok(EMBED), search: () => (n++ === 0 ? new Response('', { status: 500 }) : new Response(SEARCH)) });
+      await assert.rejects(matchTrack(LEVITATING, 'priority'), TransientUpstreamError);
+      assert.equal(searchCalls().length, 1);
+    });
+
+    test('regression: a timed out query stops the loop', async () => {
+      stub({
+        embed: ok(EMBED),
+        search: () => {
+          throw new DOMException('timed out', 'TimeoutError');
+        },
+      });
+      await assert.rejects(matchTrack(LEVITATING, 'priority'));
+      assert.equal(searchCalls().length, 1);
+    });
+
+    test('regression: a token failure stops after one embed fetch and no search', async () => {
+      stub({ embed: status(500), search: ok(SEARCH) });
+      await assert.rejects(matchTrack(LEVITATING, 'priority'), TransientUpstreamError);
+      assert.equal(embedCalls().length, 1);
+      assert.equal(searchCalls().length, 0);
+    });
   });
 
   describe('invariants', () => {
@@ -376,11 +402,5 @@ describe('matchTrack', () => {
       await matchTrack(LEVITATING, 'priority');
     });
 
-    test('regression: a token failure stops after one embed fetch and no search', async () => {
-      stub({ embed: status(500), search: ok(SEARCH) });
-      await assert.rejects(matchTrack(LEVITATING, 'priority'), TransientUpstreamError);
-      assert.equal(embedCalls().length, 1);
-      assert.equal(searchCalls().length, 0);
-    });
   });
 });

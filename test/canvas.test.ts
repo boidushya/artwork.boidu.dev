@@ -82,17 +82,6 @@ describe('getCanvas', () => {
       assert.equal(new Set(results.map((r) => JSON.stringify(r))).size, 1);
     });
 
-    test('regression: concurrent requests for different keys of one track make one canvas store call', async () => {
-      stub(() => new Response(SEARCH));
-      const results = await Promise.all([
-        getCanvas({ song: 'Levitating', artist: 'Dua Lipa', duration: 204 }, 'priority'),
-        getCanvas({ song: 'Levitating', artist: 'Dua Lipa', duration: 203 }, 'priority'),
-        getCanvas({ song: 'Levitating', artist: 'Dua Lipa', albumName: 'Future Nostalgia', duration: 204 }, 'priority'),
-      ]);
-      assert.equal(canvasCalls, 1);
-      assert.ok(results.every((r) => 'trackId' in r && r.trackId === HIT_ID));
-    });
-
     test('a finished lookup does not block the next one', async () => {
       stub(() => new Response(SEARCH));
       await getCanvas({ song: 'Levitating', artist: 'Dua Lipa', duration: 204 }, 'priority');
@@ -106,6 +95,19 @@ describe('getCanvas', () => {
       await assert.rejects(getCanvas({ song: 'Levitating', artist: 'Dua Lipa' }, 'priority'));
       stub(() => new Response(SEARCH));
       assert.ok('trackId' in (await getCanvas({ song: 'Levitating', artist: 'Dua Lipa' }, 'priority')));
+    });
+  });
+
+  describe('regressions', () => {
+    test('regression: concurrent requests for different keys of one track make one canvas store call', async () => {
+      stub(() => new Response(SEARCH));
+      const results = await Promise.all([
+        getCanvas({ song: 'Levitating', artist: 'Dua Lipa', duration: 204 }, 'priority'),
+        getCanvas({ song: 'Levitating', artist: 'Dua Lipa', duration: 203 }, 'priority'),
+        getCanvas({ song: 'Levitating', artist: 'Dua Lipa', albumName: 'Future Nostalgia', duration: 204 }, 'priority'),
+      ]);
+      assert.equal(canvasCalls, 1);
+      assert.ok(results.every((r) => 'trackId' in r && r.trackId === HIT_ID));
     });
   });
 
