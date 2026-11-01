@@ -47,8 +47,6 @@ const VERSION_TERMS = new Set([
   'karaoke',
   'live',
   'mix',
-  'remaster',
-  'remastered',
   'remix',
   'slowed',
   'sped',

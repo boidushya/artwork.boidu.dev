@@ -191,6 +191,18 @@ describe('resolve', () => {
       }
     });
 
+    test('regression: a remaster is the same recording, not a version conflict', () => {
+      const sun = (id: string, title: string): SpotifyCandidate => ({ id, title, artists: ['The Beatles'], album: 'Abbey Road', durationMs: 185000 });
+      for (const [source, remote] of [
+        ['Here Comes The Sun', 'Here Comes The Sun - Remastered 2009'],
+        ['Here Comes The Sun (2019 Remaster)', 'Here Comes The Sun - Remastered 2019'],
+        ['Here Comes The Sun (Remastered)', 'Here Comes The Sun'],
+      ]) {
+        const result = resolve({ title: source, artist: 'The Beatles', album: 'Abbey Road', durationMs: 185000 }, [sun('sunxxxxxxxxxxxxxxxxxxx', remote)]);
+        assert.equal(result.kind, 'matched', `${source} vs ${remote}`);
+      }
+    });
+
     test('regression: unknown duration earns no duration score', () => {
       const candidate = intro('introxxxxxxxxxxxxxxxxx', 'Intro', 128000);
       const unknown = score({ title: 'Intro', artist: 'The xx', album: '', durationMs: 0 }, candidate);
