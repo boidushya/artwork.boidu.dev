@@ -3,7 +3,7 @@ import { TransientUpstreamError } from './errors';
 import { fetchSpotifyWithRetry, UpstreamRateLimitedError } from './outboundLimiter';
 import { BROWSER_USER_AGENT } from './token';
 import type { Tier } from './priority';
-import { buildSearchQueries, resolve, score, type SpotifyCandidate, type TrackInput } from './spotifyMatcher';
+import { buildSearchQueries, resolve, score, type ScoredCandidate, type SpotifyCandidate, type TrackInput } from './spotifyMatcher';
 
 const EMBED_URL = 'https://open.spotify.com/embed/track/4uLU6hMCjMI75M1A2tKUQC';
 const PATHFINDER_URL = 'https://api-partner.spotify.com/pathfinder/v1/query';
@@ -235,6 +235,7 @@ async function searchSpotifyCached(query: string, tier: Tier): Promise<SpotifyCa
 export async function matchTrack(track: TrackInput, tier: Tier): Promise<string | null> {
   const candidates: SpotifyCandidate[] = [];
   let failure: unknown = null;
+  let ambiguous: ScoredCandidate[] = [];
   for (const query of buildSearchQueries(track)) {
     try {
       candidates.push(...(await searchSpotifyCached(query, tier)));
@@ -262,6 +263,7 @@ export async function matchTrack(track: TrackInput, tier: Tier): Promise<string 
       });
       return candidate.id;
     }
+    ambiguous = match.kind === 'ambiguous' ? match.candidates : [];
   }
   if (failure) throw failure;
   const closest = candidates.map((c) => score(track, c)).sort((a, b) => b.score - a.score)[0];
@@ -275,6 +277,9 @@ export async function matchTrack(track: TrackInput, tier: Tier): Promise<string 
     artistSim: closest?.artistSim.toFixed(2),
     durationDelta: closest?.durationDelta,
     versionConflict: closest?.versionConflict,
+    ambiguous: ambiguous
+      .map((t) => `${t.candidate.id} ${t.candidate.album} ${t.candidate.durationMs}ms score=${t.score}`)
+      .join(' ; '),
   });
   return null;
 }
