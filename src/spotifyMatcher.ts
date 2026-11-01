@@ -227,16 +227,13 @@ export function resolve(src: TrackInput, candidates: SpotifyCandidate[]): Resolv
     const title = foldForMatch(src.title);
     const exactTitle = close.filter((t) => foldForMatch(t.candidate.title) === title);
     const tied = exactTitle.length ? exactTitle : close;
-    winner = tied[0];
     const album = foldForMatch(src.album);
     const albumMatches = album ? tied.filter((t) => foldForMatch(t.candidate.album) === album) : [];
-    if (albumMatches.length === 1) {
-      winner = albumMatches[0];
-    } else if (!tied.every((t) => isSameRecording(winner.candidate, t.candidate))) {
+    const pool = albumMatches.length ? albumMatches : tied;
+    if (!pool.every((t) => isSameRecording(pool[0].candidate, t.candidate))) {
       return { kind: 'ambiguous', candidates: ranked.slice(0, 5) };
-    } else {
-      winner = albumMatches[0] ?? winner;
     }
+    winner = pool[0];
   }
 
   return { kind: 'matched', track: winner };

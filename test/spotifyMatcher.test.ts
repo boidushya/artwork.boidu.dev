@@ -203,6 +203,23 @@ describe('resolve', () => {
       }
     });
 
+    test('regression: compilation copies with a different length do not make the album copy ambiguous', () => {
+      const title = 'Get Lucky (feat. Pharrell Williams and Nile Rodgers)';
+      const artists = ['Daft Punk', 'Pharrell Williams', 'Nile Rodgers'];
+      const copy = (id: string, album: string, durationMs: number): SpotifyCandidate => ({ id, title, artists, album, durationMs });
+      const candidates = [
+        copy('2y3YaENSFtgYAlZ5ZC66xS', 'Zomer Hits 2021', 367013),
+        copy('5Bzx0Bg9AJcYlCD8FNZ0Hc', 'Zomer 2021', 367013),
+        copy('66xHyI6ITToQPm7PdOzIyn', 'Random Access Memories', 369614),
+        copy('2olIQt0rL0hOHau1SJ4xf2', 'Random Access Memories (10th Anniversary Edition)', 369614),
+        copy('69kOkLUCkxIZYexIgSG8rq', 'Random Access Memories', 369626),
+      ];
+      for (const durationMs of [367000, 368000, 369000, 370000]) {
+        const result = resolve({ title, artist: 'Daft Punk', album: 'Random Access Memories', durationMs }, candidates);
+        assert.equal(result.kind === 'matched' && result.track.candidate.album, 'Random Access Memories', `d=${durationMs}`);
+      }
+    });
+
     test('regression: unknown duration earns no duration score', () => {
       const candidate = intro('introxxxxxxxxxxxxxxxxx', 'Intro', 128000);
       const unknown = score({ title: 'Intro', artist: 'The xx', album: '', durationMs: 0 }, candidate);
