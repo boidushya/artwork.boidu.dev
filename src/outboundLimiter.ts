@@ -204,11 +204,25 @@ export function reserveFor(tier: Tier, priorityActive: boolean, reserve = PRIORI
   return tier === 'standard' && priorityActive ? reserve : 0;
 }
 
-let lastPriorityAt = 0;
+export interface PriorityWindow {
+  lastAt: number;
+}
 
-async function acquireSlot(bucket: TokenBucket, tier: Tier, maxWaitMs?: number): Promise<number> {
-  if (tier === 'priority') lastPriorityAt = Date.now();
-  const priorityActive = Date.now() - lastPriorityAt < PRIORITY_ACTIVE_WINDOW_MS;
+export function createPriorityWindow(): PriorityWindow {
+  return { lastAt: 0 };
+}
+
+const applePriority = createPriorityWindow();
+const spotifyPriority = createPriorityWindow();
+
+export async function acquireSlot(
+  bucket: TokenBucket,
+  tier: Tier,
+  window: PriorityWindow,
+  maxWaitMs?: number
+): Promise<number> {
+  if (tier === 'priority') window.lastAt = Date.now();
+  const priorityActive = Date.now() - window.lastAt < PRIORITY_ACTIVE_WINDOW_MS;
   const reserve = reserveFor(tier, priorityActive);
   const cap = maxWaitMs ?? (tier === 'standard' ? STANDARD_MAX_QUEUE_WAIT_MS : MAX_QUEUE_WAIT_MS);
   const start = Date.now();
@@ -229,6 +243,7 @@ async function acquireSlot(bucket: TokenBucket, tier: Tier, maxWaitMs?: number):
 interface Lane {
   bucket: TokenBucket;
   breaker: CircuitBreaker;
+  priority: PriorityWindow;
   retryAttempts: number;
   timeoutMs?: number;
   label: string;
@@ -245,6 +260,7 @@ export async function fetchAppleWithRetry(
   return fetchWithRetry(url, init, endpoint, tag, tier, {
     bucket: bucketForSource(source),
     breaker: circuitBreaker,
+    priority: applePriority,
     retryAttempts: RETRY_ATTEMPTS,
     label: source,
   });
@@ -260,6 +276,7 @@ export async function fetchSpotifyWithRetry(
   return fetchWithRetry(url, init, endpoint, tag, tier, {
     bucket: spotifyBuckets[endpoint],
     breaker: spotifyCircuitBreaker,
+    priority: spotifyPriority,
     retryAttempts: SPOTIFY_RETRY_ATTEMPTS,
     timeoutMs: SPOTIFY_TIMEOUT_MS,
     label: 'spotify',
@@ -279,7 +296,7 @@ async function fetchWithRetry(
   for (let attempt = 0; ; attempt++) {
     let waited: number;
     try {
-      waited = await acquireSlot(lane.bucket, tier);
+      waited = await acquireSlot(lane.bucket, tier, lane.priority);
     } catch (err) {
       if (err instanceof QueueTimeoutError) {
         log.warn(Tag.RATELIMIT, 'queue timeout, failing fast', {

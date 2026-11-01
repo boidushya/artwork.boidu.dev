@@ -10,6 +10,8 @@ import {
   fetchSpotifyWithRetry,
   getCircuitState,
   isCircuitOpen,
+  acquireSlot,
+  createPriorityWindow,
 } from '../src/outboundLimiter.ts';
 
 describe('TokenBucket.refill', () => {
@@ -292,6 +294,27 @@ describe('fetchSpotifyWithRetry', () => {
         (err: unknown) => err instanceof UpstreamRateLimitedError && err.endpoint === 'spotifySearch'
       );
       assert.equal(calls.length, count);
+    });
+  });
+});
+
+describe('acquireSlot priority windows', () => {
+  test('priority traffic reserves tokens for its own window', async () => {
+    const window = createPriorityWindow();
+    await acquireSlot(new TokenBucket(5, 0.001), 'priority', window, 10);
+    const bucket = new TokenBucket(5, 0.001);
+    bucket.tokens = 2;
+    await assert.rejects(acquireSlot(bucket, 'standard', window, 10), QueueTimeoutError);
+  });
+
+  describe('regressions', () => {
+    test('regression: priority traffic on one service does not reserve tokens on another', async () => {
+      const spotify = createPriorityWindow();
+      const apple = createPriorityWindow();
+      await acquireSlot(new TokenBucket(5, 0.001), 'priority', spotify, 10);
+      const bucket = new TokenBucket(5, 0.001);
+      bucket.tokens = 2;
+      assert.equal(await acquireSlot(bucket, 'standard', apple, 10), 0);
     });
   });
 });
