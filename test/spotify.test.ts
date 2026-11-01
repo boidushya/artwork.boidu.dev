@@ -9,7 +9,6 @@ import {
   clearSpotifySearchCache,
   searchSpotify,
   SpotifyHashRotatedError,
-  SpotifyTokenError,
 } from '../src/spotify.ts';
 import { TransientUpstreamError } from '../src/errors.ts';
 import { UpstreamRateLimitedError } from '../src/outboundLimiter.ts';
@@ -170,6 +169,15 @@ describe('searchSpotify', () => {
       assert.equal(candidates.length, 15);
     });
 
+    test('regression: candidates with a malformed track id are dropped so another can win', async () => {
+      const body = JSON.parse(SEARCH);
+      body.data.searchV2.tracksV2.items[0].item.data.id = 'not-a-track-id';
+      stub({ embed: ok(EMBED), search: ok(JSON.stringify(body)) });
+      const candidates = await searchSpotify('x', 'priority');
+      assert.equal(candidates.length, 19);
+      assert.ok(candidates.every((c) => /^[A-Za-z0-9]{22}$/.test(c.id)));
+    });
+
     test('falls back to the uri when id is missing', async () => {
       const body = JSON.parse(SEARCH);
       delete body.data.searchV2.tracksV2.items[0].item.data.id;
@@ -306,11 +314,22 @@ describe('matchTrack', () => {
     assert.equal(canvasCalls().length, 0);
   });
 
-  test('a failed query followed by a match returns the match', async () => {
+  test('regression: a failed query stops the loop instead of spending more calls on a failing upstream', async () => {
     let n = 0;
     stub({ embed: ok(EMBED), search: () => (n++ === 0 ? new Response('', { status: 500 }) : new Response(SEARCH)) });
-    assert.equal(await matchTrack(LEVITATING, 'priority'), ORIGINAL_ID);
-    assert.equal(searchCalls().length, 2);
+    await assert.rejects(matchTrack(LEVITATING, 'priority'), TransientUpstreamError);
+    assert.equal(searchCalls().length, 1);
+  });
+
+  test('regression: a timed out query stops the loop', async () => {
+    stub({
+      embed: ok(EMBED),
+      search: () => {
+        throw new DOMException('timed out', 'TimeoutError');
+      },
+    });
+    await assert.rejects(matchTrack(LEVITATING, 'priority'));
+    assert.equal(searchCalls().length, 1);
   });
 
   test('no match on any query is null', async () => {
@@ -359,7 +378,7 @@ describe('matchTrack', () => {
 
     test('regression: a token failure stops after one embed fetch and no search', async () => {
       stub({ embed: status(500), search: ok(SEARCH) });
-      await assert.rejects(matchTrack(LEVITATING, 'priority'), SpotifyTokenError);
+      await assert.rejects(matchTrack(LEVITATING, 'priority'), TransientUpstreamError);
       assert.equal(embedCalls().length, 1);
       assert.equal(searchCalls().length, 0);
     });

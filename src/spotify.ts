@@ -24,12 +24,6 @@ export class SpotifyHashRotatedError extends TransientUpstreamError {
   }
 }
 
-export class SpotifyTokenError extends TransientUpstreamError {
-  constructor(message: string) {
-    super(message);
-    this.name = 'SpotifyTokenError';
-  }
-}
 
 interface PathfinderTrack {
   id?: string;
@@ -68,11 +62,11 @@ async function fetchSession(): Promise<string> {
       headers: { 'User-Agent': BROWSER_USER_AGENT },
     });
   } catch (error) {
-    throw new SpotifyTokenError(`Spotify embed fetch failed: ${error instanceof Error ? error.message : String(error)}`);
+    throw new TransientUpstreamError(`Spotify embed fetch failed: ${error instanceof Error ? error.message : String(error)}`);
   }
-  if (!res.ok) throw new SpotifyTokenError(`Spotify embed HTTP ${res.status}`);
+  if (!res.ok) throw new TransientUpstreamError(`Spotify embed HTTP ${res.status}`);
   const parsed = parseEmbedSession(await res.text());
-  if (!parsed) throw new SpotifyTokenError('Spotify embed page had no session token');
+  if (!parsed) throw new TransientUpstreamError('Spotify embed page had no session token');
   session = parsed;
   log.info(Tag.SPOTIFY, 'token refreshed', { expiresInS: Math.round((parsed.expiresAt - Date.now()) / 1000) });
   return parsed.token;
@@ -127,10 +121,12 @@ export async function searchSpotify(query: string, tier: Tier): Promise<SpotifyC
   const ms = Date.now() - start;
   if (res.status === 429) {
     log.error(Tag.SPOTIFY, '← 429 rate limited', { ms });
+    await res.body?.cancel();
     throw new UpstreamRateLimitedError('spotifySearch');
   }
   if (!res.ok) {
     log.error(Tag.SPOTIFY, '← error', { status: res.status, ms });
+    await res.body?.cancel();
     throw new TransientUpstreamError(`Spotify search HTTP ${res.status}`);
   }
 
@@ -151,7 +147,7 @@ export async function searchSpotify(query: string, tier: Tier): Promise<SpotifyC
     const id = d?.id ?? d?.uri?.split(':').pop();
     const artists = (d?.artists?.items ?? []).map((a) => a?.profile?.name).filter((n): n is string => Boolean(n));
     const durationMs = d?.duration?.totalMilliseconds;
-    if (!id || !d?.name || artists.length === 0 || typeof durationMs !== 'number') continue;
+    if (!id || !TRACK_ID.test(id) || !d?.name || artists.length === 0 || typeof durationMs !== 'number') continue;
     candidates.push({ id, title: d.name, artists, album: d.albumOfTrack?.name ?? '', durationMs });
   }
   log.info(Tag.SPOTIFY, '← ok', { ms, tracks: candidates.length });
@@ -195,10 +191,12 @@ export async function fetchCanvasUrl(trackId: string, tier: Tier): Promise<strin
   const ms = Date.now() - start;
   if (res.status === 429) {
     log.error(Tag.CANVAS, '← 429 rate limited', { trackId, ms });
+    await res.body?.cancel();
     throw new UpstreamRateLimitedError('canvasStore');
   }
   if (res.status !== 200) {
     log.error(Tag.CANVAS, '← error', { trackId, status: res.status, ms });
+    await res.body?.cancel();
     throw new TransientUpstreamError(`Canvas store HTTP ${res.status}`);
   }
   const body = await readJson<{ data?: Record<string, { url?: unknown } | null> }>(res, 'Canvas store');
@@ -234,23 +232,10 @@ async function searchSpotifyCached(query: string, tier: Tier): Promise<SpotifyCa
 
 export async function matchTrack(track: TrackInput, tier: Tier): Promise<string | null> {
   const candidates: SpotifyCandidate[] = [];
-  let failure: unknown = null;
   let ambiguous: ScoredCandidate[] = [];
+  // A failed query fails the lookup: later queries would spend the shared budget on a failing upstream.
   for (const query of buildSearchQueries(track)) {
-    try {
-      candidates.push(...(await searchSpotifyCached(query, tier)));
-    } catch (error) {
-      failure = error;
-      // Later queries hit the same wall and spend more of the shared budget.
-      if (
-        error instanceof UpstreamRateLimitedError ||
-        error instanceof SpotifyHashRotatedError ||
-        error instanceof SpotifyTokenError
-      ) {
-        break;
-      }
-      continue;
-    }
+    candidates.push(...(await searchSpotifyCached(query, tier)));
     const match = resolve(track, candidates);
     if (match.kind === 'matched') {
       const { candidate } = match.track;
@@ -265,7 +250,6 @@ export async function matchTrack(track: TrackInput, tier: Tier): Promise<string 
     }
     ambiguous = match.kind === 'ambiguous' ? match.candidates : [];
   }
-  if (failure) throw failure;
   const closest = candidates.map((c) => score(track, c)).sort((a, b) => b.score - a.score)[0];
   log.info(Tag.SPOTIFY, 'no match', {
     title: track.title,

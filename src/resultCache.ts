@@ -189,9 +189,9 @@ export async function getCanvasIndex(
   return { trackId: row.track_id, videoUrl: row.video_url };
 }
 
-export async function getCanvasByTrackId(trackId: string): Promise<CanvasIndexRow | null> {
-  const result = await query<{ video_url: string | null }>(
-    `SELECT video_url
+export async function getCanvasByTrackId(trackId: string): Promise<(CanvasIndexRow & { expiresAt: Date }) | null> {
+  const result = await query<{ video_url: string | null; expires_at: Date }>(
+    `SELECT video_url, expires_at
      FROM canvas_index
      WHERE track_id = $1 AND expires_at > now()
      ORDER BY expires_at DESC
@@ -199,28 +199,29 @@ export async function getCanvasByTrackId(trackId: string): Promise<CanvasIndexRo
     [trackId]
   );
   if (!result || result.rows.length === 0) return null;
-  const videoUrl = result.rows[0].video_url;
+  const { video_url: videoUrl, expires_at: expiresAt } = result.rows[0];
   log.info(Tag.CACHE_HIT, 'canvas_index by track', { trackId, canvas: videoUrl !== null });
-  return { trackId, videoUrl };
+  return { trackId, videoUrl, expiresAt };
 }
 
-export async function upsertCanvasIndex(k: TrackKey, row: CanvasIndexRow): Promise<void> {
+// A row copied from another key keeps that row's expiry, so reuse never extends an answer's life.
+export async function upsertCanvasIndex(k: TrackKey, row: CanvasIndexRow, expiresAt?: Date): Promise<void> {
   const ttl = canvasTtl(row);
   const [song, artist, album, duration] = trackKey(k);
   await query(
     `INSERT INTO canvas_index (song, artist, album, duration, track_id, video_url, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, now() + ($7 || ' seconds')::interval)
+     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($8::timestamptz, now() + ($7 || ' seconds')::interval))
      ON CONFLICT (song, artist, album, duration) DO UPDATE SET
        track_id   = EXCLUDED.track_id,
        video_url  = EXCLUDED.video_url,
        expires_at = EXCLUDED.expires_at`,
-    [song, artist, album, duration, row.trackId, row.videoUrl, ttl]
+    [song, artist, album, duration, row.trackId, row.videoUrl, ttl, expiresAt ?? null]
   );
   log.info(Tag.CACHE_UPSERT, 'canvas_index', {
     key: `${song}|${artist}|${album}|${duration}`,
     trackId: row.trackId ?? 'NEGATIVE',
     canvas: row.videoUrl !== null,
-    ttlDays: Math.round(ttl / DAY),
+    ttlDays: expiresAt ? Math.round((expiresAt.getTime() - Date.now()) / 1000 / DAY) : Math.round(ttl / DAY),
   });
 }
 

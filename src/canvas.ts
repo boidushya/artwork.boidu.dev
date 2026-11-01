@@ -20,7 +20,10 @@ const MAX_DURATION_S = 86400;
 // Postgres rejects btree rows over ~2.7 kB, and an uncacheable key would cost a lookup every time.
 const MAX_KEY_BYTES = 2000;
 
-const inFlight = new Map<string, Promise<CanvasIndexRow>>();
+type TrackCanvas = CanvasIndexRow & { expiresAt?: Date };
+
+const lookupsInFlight = new Map<string, Promise<CanvasIndexRow>>();
+const tracksInFlight = new Map<string, Promise<TrackCanvas>>();
 
 export async function getCanvas(request: TrackKey, tier: Tier): Promise<CanvasResponse> {
   const req = { ...request, duration: knownDuration(request.duration) };
@@ -42,23 +45,30 @@ function knownDuration(d: number | undefined): number | undefined {
   return d !== undefined && Number.isFinite(d) && d > 0 && d <= MAX_DURATION_S ? d : undefined;
 }
 
-function lookupOnce(req: TrackKey, tier: Tier): Promise<CanvasIndexRow> {
-  const id = trackKey(req).join('|');
-  let pending = inFlight.get(id);
+function singleFlight<T>(inFlight: Map<string, Promise<T>>, key: string, run: () => Promise<T>): Promise<T> {
+  let pending = inFlight.get(key);
   if (!pending) {
-    pending = lookupAndStore(req, tier).finally(() => inFlight.delete(id));
-    inFlight.set(id, pending);
+    pending = run().finally(() => inFlight.delete(key));
+    inFlight.set(key, pending);
   }
   return pending;
+}
+
+function lookupOnce(req: TrackKey, tier: Tier): Promise<CanvasIndexRow> {
+  return singleFlight(lookupsInFlight, trackKey(req).join('|'), () => lookupAndStore(req, tier));
+}
+
+function canvasForTrack(trackId: string, tier: Tier): Promise<TrackCanvas> {
+  return singleFlight(tracksInFlight, trackId, async () => {
+    return (await getCanvasByTrackId(trackId)) ?? { trackId, videoUrl: await fetchCanvasUrl(trackId, tier) };
+  });
 }
 
 async function lookupAndStore(req: TrackKey, tier: Tier): Promise<CanvasIndexRow> {
   try {
     const trackId = await matchTrack(toTrackInput(req), tier);
-    const row: CanvasIndexRow = trackId
-      ? ((await getCanvasByTrackId(trackId)) ?? { trackId, videoUrl: await fetchCanvasUrl(trackId, tier) })
-      : { trackId: null, videoUrl: null };
-    await upsertCanvasIndex(req, row);
+    const { expiresAt, ...row }: TrackCanvas = trackId ? await canvasForTrack(trackId, tier) : { trackId: null, videoUrl: null };
+    await upsertCanvasIndex(req, row, expiresAt);
     return row;
   } catch (error) {
     if (error instanceof UpstreamRateLimitedError) {

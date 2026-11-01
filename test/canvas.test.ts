@@ -15,6 +15,7 @@ const VIDEO_URL = JSON.parse(CANVAS_HIT).data[HIT_ID].url;
 
 let originalFetch: typeof globalThis.fetch;
 let searches: number;
+let canvasCalls: number;
 
 function stub(search: () => Response, canvas: (id: string) => Response = (id) => new Response(JSON.stringify({ data: { [id]: { url: VIDEO_URL } } }))) {
   globalThis.fetch = async (input) => {
@@ -25,6 +26,8 @@ function stub(search: () => Response, canvas: (id: string) => Response = (id) =>
       await new Promise((r) => setTimeout(r, 20));
       return search();
     }
+    canvasCalls++;
+    await new Promise((r) => setTimeout(r, 50));
     return canvas(url.pathname.split('/').pop()!);
   };
 }
@@ -32,6 +35,7 @@ function stub(search: () => Response, canvas: (id: string) => Response = (id) =>
 beforeEach(() => {
   originalFetch = globalThis.fetch;
   searches = 0;
+  canvasCalls = 0;
   invalidateSpotifyToken();
   clearSpotifySearchCache();
 });
@@ -76,6 +80,17 @@ describe('getCanvas', () => {
       ]);
       assert.equal(searches, 1);
       assert.equal(new Set(results.map((r) => JSON.stringify(r))).size, 1);
+    });
+
+    test('regression: concurrent requests for different keys of one track make one canvas store call', async () => {
+      stub(() => new Response(SEARCH));
+      const results = await Promise.all([
+        getCanvas({ song: 'Levitating', artist: 'Dua Lipa', duration: 204 }, 'priority'),
+        getCanvas({ song: 'Levitating', artist: 'Dua Lipa', duration: 203 }, 'priority'),
+        getCanvas({ song: 'Levitating', artist: 'Dua Lipa', albumName: 'Future Nostalgia', duration: 204 }, 'priority'),
+      ]);
+      assert.equal(canvasCalls, 1);
+      assert.ok(results.every((r) => 'trackId' in r && r.trackId === HIT_ID));
     });
 
     test('a finished lookup does not block the next one', async () => {
