@@ -175,6 +175,21 @@ describe('searchSpotify', () => {
     });
   });
 
+  describe('regressions', () => {
+    test('regression: search terms are cut to the 250 character API limit without splitting a character', async () => {
+      stub({ embed: ok(EMBED), search: ok(SEARCH) });
+      for (const query of ['a'.repeat(400), `${'x'.repeat(249)}\u{1F480}tail`, '\u{1F480}'.repeat(200)]) {
+        await searchSpotify(query, 'priority');
+      }
+      for (const call of searchCalls()) {
+        const term: string = JSON.parse(call.url.searchParams.get('variables')!).searchTerm;
+        assert.ok(term.length <= 250, `length ${term.length}`);
+        assert.equal(term, term.toWellFormed(), 'no lone surrogates');
+      }
+      assert.equal(JSON.parse(searchCalls()[1].url.searchParams.get('variables')!).searchTerm, 'x'.repeat(249));
+    });
+  });
+
   describe('error paths', () => {
     test('two 401s in a row is a transient failure', async () => {
       stub({ embed: ok(EMBED), search: status(401) });

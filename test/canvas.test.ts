@@ -145,3 +145,41 @@ describe('regressions', () => {
     assert.equal(searches, 1);
   });
 });
+
+describe('input limits', () => {
+  describe('regressions', () => {
+    test('regression: a duration past one day is unknown instead of overflowing the integer column', async () => {
+      stub(() => new Response(SEARCH));
+      await Promise.all([
+        getCanvas({ song: 'Levitating', artist: 'Dua Lipa' }, 'priority'),
+        getCanvas({ song: 'Levitating', artist: 'Dua Lipa', duration: 99999999999 }, 'priority'),
+        getCanvas({ song: 'Levitating', artist: 'Dua Lipa', duration: 86401 }, 'priority'),
+      ]);
+      assert.equal(searches, 1);
+      assert.equal(toTrackInput({ song: 'a', artist: 'b', duration: 99999999999 }).durationMs, 0);
+    });
+
+    test('regression: an oversize key answers no match without any request', async () => {
+      stub(() => {
+        throw new Error('must not search');
+      });
+      for (const req of [
+        { song: 'a'.repeat(5000), artist: 'Dua Lipa' },
+        { song: 'Levitating', artist: 'b'.repeat(5000) },
+        { song: 'Levitating', artist: 'Dua Lipa', albumName: 'c'.repeat(5000) },
+        { song: 'ﷺ'.repeat(200), artist: 'x' },
+      ]) {
+        assert.deepEqual(await getCanvas(req, 'priority'), { error: 'No matching tracks found' });
+      }
+      assert.equal(searches, 0);
+    });
+  });
+
+  describe('edge cases', () => {
+    test('a long but valid title still looks up', async () => {
+      stub(() => new Response(SEARCH));
+      await getCanvas({ song: 'Levitating '.repeat(30), artist: 'Dua Lipa' }, 'priority');
+      assert.ok(searches >= 1);
+    });
+  });
+});

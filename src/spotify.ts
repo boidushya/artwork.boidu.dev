@@ -13,6 +13,7 @@ const CLIENT_ID = 'artwork.boidu.dev';
 const EMBED_TIMEOUT_MS = 5000;
 const EXPIRY_SKEW_MS = 60_000;
 const TRACK_ID = /^[A-Za-z0-9]{22}$/;
+const MAX_SEARCH_TERM_LENGTH = 250;
 
 export class SpotifyHashRotatedError extends TransientUpstreamError {
   constructor() {
@@ -90,7 +91,7 @@ async function readJson<T>(res: Response, what: string): Promise<T> {
 
 export async function searchSpotify(query: string, tier: Tier): Promise<SpotifyCandidate[]> {
   const variables = {
-    searchTerm: query,
+    searchTerm: clampSearchTerm(query),
     offset: 0,
     limit: 20,
     numberOfTopResults: 5,
@@ -145,6 +146,15 @@ export async function searchSpotify(query: string, tier: Tier): Promise<SpotifyC
   }
   log.info(Tag.SPOTIFY, '← ok', { ms, tracks: candidates.length });
   return candidates;
+}
+
+function clampSearchTerm(query: string): string {
+  let term = '';
+  for (const ch of query) {
+    if (term.length + ch.length > MAX_SEARCH_TERM_LENGTH) break;
+    term += ch;
+  }
+  return term;
 }
 
 async function searchWithToken(url: string, token: string, tier: Tier): Promise<Response> {
@@ -203,10 +213,18 @@ export async function lookupCanvas(track: TrackInput, tier: Tier): Promise<Canva
     }
     const match = resolve(track, candidates);
     if (match.kind === 'matched') {
-      const trackId = match.track.candidate.id;
-      return { kind: 'matched', trackId, videoUrl: await fetchCanvasUrl(trackId, tier) };
+      const { candidate, score } = match.track;
+      log.info(Tag.SPOTIFY, 'best match', {
+        trackId: candidate.id,
+        name: candidate.title,
+        artist: candidate.artists.join(', '),
+        album: candidate.album,
+        score,
+      });
+      return { kind: 'matched', trackId: candidate.id, videoUrl: await fetchCanvasUrl(candidate.id, tier) };
     }
   }
   if (failure) throw failure;
+  log.info(Tag.SPOTIFY, 'no match', { title: track.title, artist: track.artist, candidates: candidates.length });
   return { kind: 'noMatch' };
 }

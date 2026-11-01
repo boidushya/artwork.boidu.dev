@@ -121,7 +121,7 @@ async function handleArtwork(c: any): Promise<Response> {
 async function handleCanvas(c: any): Promise<Response> {
   try {
     const { song, artist, albumName, duration } = readTrackParams(new URL(c.req.url));
-    if (!song || !artist) return jsonWithCache(c, CANVAS_USAGE, 200);
+    if (!song?.trim() || !artist?.trim()) return jsonWithCache(c, CANVAS_USAGE, 200);
     const result = await getCanvas({ song, artist, albumName, duration }, requestTier(c));
     return jsonWithCache(c, result, 200);
   } catch (error) {

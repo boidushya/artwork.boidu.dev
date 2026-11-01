@@ -8,12 +8,18 @@ import type { Tier } from './priority';
 
 export type CanvasResponse = { trackId: string; videoUrl: string | null } | { error: string };
 
+const NO_MATCH = { error: 'No matching tracks found' } as const;
+const MAX_DURATION_S = 86400;
+// Postgres rejects btree rows over ~2.7 kB, and an uncacheable key would cost a lookup every time.
+const MAX_KEY_BYTES = 2000;
+
 const inFlight = new Map<string, Promise<CanvasIndexRow>>();
 
 export async function getCanvas(request: TrackKey, tier: Tier): Promise<CanvasResponse> {
   const req = { ...request, duration: knownDuration(request.duration) };
+  if (Buffer.byteLength(trackKey(req).slice(0, 3).join('')) > MAX_KEY_BYTES) return NO_MATCH;
   const row = (await getCanvasIndex(req)) ?? (await lookupOnce(req, tier));
-  return row.trackId ? { trackId: row.trackId, videoUrl: row.videoUrl } : { error: 'No matching tracks found' };
+  return row.trackId ? { trackId: row.trackId, videoUrl: row.videoUrl } : NO_MATCH;
 }
 
 export function toTrackInput(req: TrackKey): TrackInput {
@@ -26,7 +32,7 @@ export function toTrackInput(req: TrackKey): TrackInput {
 }
 
 function knownDuration(d: number | undefined): number | undefined {
-  return d !== undefined && Number.isFinite(d) && d > 0 ? d : undefined;
+  return d !== undefined && Number.isFinite(d) && d > 0 && d <= MAX_DURATION_S ? d : undefined;
 }
 
 function lookupOnce(req: TrackKey, tier: Tier): Promise<CanvasIndexRow> {
