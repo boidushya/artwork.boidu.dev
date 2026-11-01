@@ -18,7 +18,8 @@ import {
 } from './resultCache';
 import { artworkRateLimit, mintRateLimit } from './rateLimit';
 import { UpstreamRateLimitedError } from './outboundLimiter';
-import { TransientUpstreamError, errorHttpResponse, USAGE } from './errors';
+import { TransientUpstreamError, errorHttpResponse, USAGE, CANVAS_USAGE } from './errors';
+import { getCanvas } from './canvas';
 import { cacheControlFor } from './httpCache';
 import type { TokenResult } from './token';
 import { resolveTier, mintToken, gatingEnabled } from './priority';
@@ -102,23 +103,52 @@ app.post('/mint', mintRateLimit, async (c) => {
 
 app.get('/', handleArtwork);
 app.get('/artwork', handleArtwork);
+app.get('/canvas', handleCanvas);
+
+function requestTier(c: any): Tier {
+  return priorityEnabled() ? resolveTier(c.req.header('authorization') ?? null) : 'priority';
+}
 
 async function handleArtwork(c: any): Promise<Response> {
   try {
-    const tier = priorityEnabled() ? resolveTier(c.req.header('authorization') ?? null) : 'priority';
-    const result = await handleArtworkRequest(c.req.url, tier);
+    const result = await handleArtworkRequest(c.req.url, requestTier(c));
     return jsonWithCache(c, result, 200);
   } catch (error) {
-    if (error instanceof UpstreamRateLimitedError) {
-      log.warn(Tag.HTTP, 'upstream rate limited → 503', { endpoint: error.endpoint });
-    } else if (error instanceof TransientUpstreamError) {
-      log.warn(Tag.HTTP, 'transient upstream failure → 502', { error: error.message });
-    } else {
-      log.error(Tag.HTTP, 'unhandled request error', error);
-    }
-    const { status, body } = errorHttpResponse(error);
-    return jsonWithCache(c, body, status);
+    return errorJson(c, error);
   }
+}
+
+async function handleCanvas(c: any): Promise<Response> {
+  try {
+    const { song, artist, albumName, duration } = readTrackParams(new URL(c.req.url));
+    if (!song?.trim() || !artist?.trim()) return jsonWithCache(c, CANVAS_USAGE, 200);
+    const result = await getCanvas({ song, artist, albumName, duration }, requestTier(c));
+    return jsonWithCache(c, result, 200);
+  } catch (error) {
+    return errorJson(c, error);
+  }
+}
+
+function errorJson(c: any, error: unknown): Response {
+  if (error instanceof UpstreamRateLimitedError) {
+    log.warn(Tag.HTTP, 'upstream rate limited → 503', { endpoint: error.endpoint });
+  } else if (error instanceof TransientUpstreamError) {
+    log.warn(Tag.HTTP, 'transient upstream failure → 502', { error: error.message });
+  } else {
+    log.error(Tag.HTTP, 'unhandled request error', error);
+  }
+  const { status, body } = errorHttpResponse(error);
+  return jsonWithCache(c, body, status);
+}
+
+function readTrackParams(url: URL) {
+  const durationParam = url.searchParams.get('d') || url.searchParams.get('duration');
+  return {
+    song: url.searchParams.get('s') || url.searchParams.get('song'),
+    artist: url.searchParams.get('a') || url.searchParams.get('artist'),
+    albumName: url.searchParams.get('al') || url.searchParams.get('albumName') || undefined,
+    duration: durationParam ? parseInt(durationParam, 10) : undefined,
+  };
 }
 
 function jsonWithCache(c: any, body: object, status: 200 | 500 | 502 | 503): Response {
@@ -132,14 +162,9 @@ async function handleArtworkRequest(
   tier: Tier
 ): Promise<ArtworkResponse | ErrorResponse> {
   const url = new URL(requestUrl);
-  const song = url.searchParams.get('s') || url.searchParams.get('song');
-  const artist = url.searchParams.get('a') || url.searchParams.get('artist');
+  const { song, artist, albumName, duration } = readTrackParams(url);
   const albumIdParam = url.searchParams.get('id');
   const appleUrl = url.searchParams.get('url');
-  const albumName =
-    url.searchParams.get('al') || url.searchParams.get('albumName') || undefined;
-  const durationParam = url.searchParams.get('d') || url.searchParams.get('duration');
-  const duration = durationParam ? parseInt(durationParam, 10) : undefined;
 
   let tokenResult: TokenResult | null = null;
   try {

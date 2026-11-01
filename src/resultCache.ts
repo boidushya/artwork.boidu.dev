@@ -12,6 +12,8 @@ const ALBUM_NO_ANIMATED_MAX_TTL = 365 * DAY;
 const ALBUM_NO_ANIMATED_MULTIPLIER = 4;
 const ALBUM_NOT_FOUND_TTL = 7 * DAY;
 const ALBUM_VIDEO_RESOLUTION_FAILED_TTL = 1 * DAY;
+const CANVAS_HIT_TTL = 30 * DAY;
+const CANVAS_MISS_TTL = 7 * DAY;
 
 export interface AlbumCacheRow {
   storefront: string;
@@ -34,12 +36,20 @@ export interface SearchIndexHit {
   trackArtist: string | null;
 }
 
-export interface SearchKey {
-  storefront: string;
+export interface TrackKey {
   song: string;
   artist: string;
   albumName?: string;
   duration?: number;
+}
+
+export interface SearchKey extends TrackKey {
+  storefront: string;
+}
+
+export interface CanvasIndexRow {
+  trackId: string | null;
+  videoUrl: string | null;
 }
 
 export const TTL = {
@@ -51,16 +61,16 @@ export const TTL = {
   ALBUM_NO_ANIMATED_MULTIPLIER: ALBUM_NO_ANIMATED_MULTIPLIER,
   ALBUM_NOT_FOUND: ALBUM_NOT_FOUND_TTL,
   ALBUM_VIDEO_RESOLUTION_FAILED: ALBUM_VIDEO_RESOLUTION_FAILED_TTL,
+  CANVAS_HIT: CANVAS_HIT_TTL,
+  CANVAS_MISS: CANVAS_MISS_TTL,
 } as const;
 
+export function trackKey(k: TrackKey): [string, string, string, number] {
+  return [normalize(k.song), normalize(k.artist), k.albumName ? normalize(k.albumName) : '', k.duration ?? -1];
+}
+
 export function buildSearchKey(k: SearchKey): [string, string, string, string, number] {
-  return [
-    k.storefront,
-    normalize(k.song),
-    normalize(k.artist),
-    k.albumName ? normalize(k.albumName) : '',
-    k.duration ?? -1,
-  ];
+  return [k.storefront, ...trackKey(k)];
 }
 
 export async function getSearchIndex(k: SearchKey): Promise<SearchIndexHit | null> {
@@ -146,6 +156,73 @@ export async function getSearchIndexAnywhere(
     stale: !!opts?.includeExpired,
   });
   return { albumId: row.album_id, trackName: row.track_name, trackArtist: row.track_artist };
+}
+
+export function canvasTtl(row: CanvasIndexRow): number {
+  return row.videoUrl ? CANVAS_HIT_TTL : CANVAS_MISS_TTL;
+}
+
+export async function getCanvasIndex(
+  k: TrackKey,
+  opts?: { includeExpired?: boolean }
+): Promise<CanvasIndexRow | null> {
+  const key = trackKey(k);
+  const freshness = opts?.includeExpired ? '' : 'AND expires_at > now()';
+  const result = await query<{ track_id: string | null; video_url: string | null }>(
+    `SELECT track_id, video_url
+     FROM canvas_index
+     WHERE song = $1 AND artist = $2 AND album = $3 AND duration = $4 ${freshness}`,
+    key
+  );
+  const label = key.join('|');
+  if (!result || result.rows.length === 0) {
+    if (!opts?.includeExpired) log.info(Tag.CACHE_MISS, 'canvas_index', { key: label });
+    return null;
+  }
+  const row = result.rows[0];
+  log.info(Tag.CACHE_HIT, 'canvas_index', {
+    key: label,
+    trackId: row.track_id ?? 'NEGATIVE',
+    canvas: row.video_url !== null,
+    stale: !!opts?.includeExpired,
+  });
+  return { trackId: row.track_id, videoUrl: row.video_url };
+}
+
+export async function getCanvasByTrackId(trackId: string): Promise<(CanvasIndexRow & { expiresAt: Date }) | null> {
+  const result = await query<{ video_url: string | null; expires_at: Date }>(
+    `SELECT video_url, expires_at
+     FROM canvas_index
+     WHERE track_id = $1 AND expires_at > now()
+     ORDER BY expires_at DESC
+     LIMIT 1`,
+    [trackId]
+  );
+  if (!result || result.rows.length === 0) return null;
+  const { video_url: videoUrl, expires_at: expiresAt } = result.rows[0];
+  log.info(Tag.CACHE_HIT, 'canvas_index by track', { trackId, canvas: videoUrl !== null });
+  return { trackId, videoUrl, expiresAt };
+}
+
+// A row copied from another key keeps that row's expiry, so reuse never extends an answer's life.
+export async function upsertCanvasIndex(k: TrackKey, row: CanvasIndexRow, expiresAt?: Date): Promise<void> {
+  const ttl = canvasTtl(row);
+  const [song, artist, album, duration] = trackKey(k);
+  await query(
+    `INSERT INTO canvas_index (song, artist, album, duration, track_id, video_url, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($8::timestamptz, now() + ($7 || ' seconds')::interval))
+     ON CONFLICT (song, artist, album, duration) DO UPDATE SET
+       track_id   = EXCLUDED.track_id,
+       video_url  = EXCLUDED.video_url,
+       expires_at = EXCLUDED.expires_at`,
+    [song, artist, album, duration, row.trackId, row.videoUrl, ttl, expiresAt ?? null]
+  );
+  log.info(Tag.CACHE_UPSERT, 'canvas_index', {
+    key: `${song}|${artist}|${album}|${duration}`,
+    trackId: row.trackId ?? 'NEGATIVE',
+    canvas: row.videoUrl !== null,
+    ttlDays: expiresAt ? Math.round((expiresAt.getTime() - Date.now()) / 1000 / DAY) : Math.round(ttl / DAY),
+  });
 }
 
 export async function getAlbumCache(

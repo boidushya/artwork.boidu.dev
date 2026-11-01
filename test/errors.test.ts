@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { TransientUpstreamError, errorHttpResponse, USAGE } from '../src/errors.ts';
+import { TransientUpstreamError, errorHttpResponse, USAGE, CANVAS_USAGE } from '../src/errors.ts';
 import { UpstreamRateLimitedError } from '../src/outboundLimiter.ts';
 
 describe('errorHttpResponse', () => {
@@ -60,5 +60,27 @@ describe('USAGE', () => {
   test('tells clients which answers are safe to cache', () => {
     assert.match(JSON.stringify(USAGE.responses), /retry/i);
     assert.match(JSON.stringify(USAGE.responses), /cache/i);
+  });
+});
+
+describe('CANVAS_USAGE', () => {
+  test('keeps the missing parameters error shape and names the canvas route', () => {
+    assert.match(CANVAS_USAGE.error, /^Missing parameters/);
+    assert.match(CANVAS_USAGE.error, /\/canvas\?s=/);
+  });
+
+  test('shares the parameter docs with the artwork route', () => {
+    assert.equal(CANVAS_USAGE.params, USAGE.params);
+  });
+
+  test('the artwork usage lists the canvas endpoint', () => {
+    assert.match(USAGE.endpoints.canvas, /^GET \/canvas\?s=/);
+  });
+
+  test('tells clients what each answer means and which to cache', () => {
+    const responses = JSON.stringify(CANVAS_USAGE.responses);
+    assert.match(responses, /trackId/);
+    assert.match(responses, /cache/i);
+    assert.match(responses, /retry/i);
   });
 });

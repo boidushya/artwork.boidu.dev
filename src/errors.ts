@@ -23,6 +23,7 @@ export const USAGE = {
     search: 'GET /?s=<track title>&a=<artist>&al=<album>&d=<duration in seconds>',
     albumId: 'GET /?id=<numeric Apple Music album id>',
     albumUrl: 'GET /?url=<music.apple.com album url>',
+    canvas: 'GET /canvas?s=<track title>&a=<artist>&al=<album>&d=<duration in seconds>',
   },
   params: {
     s: 'Track title as your source shows it.',
@@ -34,6 +35,19 @@ export const USAGE = {
     '200 with videoUrl': 'Animated artwork found. Safe to cache.',
     '200 with videoUrl null': 'Album found without animated artwork. Safe to cache for a few days.',
     '200 with error': 'Definitive answer, e.g. no matching track or album not found. Safe to cache for a few days.',
+    '429': 'You are sending too many requests. Slow down and cache on your side.',
+    '502 or 503': 'Temporary failure. Retry later and do not cache.',
+  },
+} as const;
+
+export const CANVAS_USAGE = {
+  error: 'Missing parameters. Use: /canvas?s=song&a=artist',
+  endpoint: USAGE.endpoints.canvas,
+  params: USAGE.params,
+  responses: {
+    '200 with videoUrl': 'Canvas video found. Safe to cache.',
+    '200 with trackId and videoUrl null': 'Track found without a canvas. Safe to cache for a few days.',
+    '200 with error': 'No matching track. Safe to cache for a few days.',
     '429': 'You are sending too many requests. Slow down and cache on your side.',
     '502 or 503': 'Temporary failure. Retry later and do not cache.',
   },

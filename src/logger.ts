@@ -43,6 +43,8 @@ export const Tag = {
   TOKEN: 'token',
   MUT: 'mut',
   RATELIMIT: 'ratelimit',
+  SPOTIFY: 'spotify',
+  CANVAS: 'canvas',
 } as const;
 
 const TAG_COLORS: Record<string, string> = {
@@ -59,6 +61,8 @@ const TAG_COLORS: Record<string, string> = {
   token: ANSI.brightCyan,
   mut: ANSI.cyan,
   ratelimit: ANSI.brightMagenta,
+  spotify: ANSI.green,
+  canvas: ANSI.brightYellow,
 };
 
 const LEVEL_LABEL: Record<LogLevel, string> = {
