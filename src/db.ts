@@ -86,6 +86,19 @@ CREATE INDEX IF NOT EXISTS idx_search_song_artist ON search_index (song, artist,
 ALTER TABLE album_cache ADD COLUMN IF NOT EXISTS recheck_count INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE album_cache ADD COLUMN IF NOT EXISTS animated_vertical_url TEXT;
 ALTER TABLE album_cache ADD COLUMN IF NOT EXISTS video_vertical_url    TEXT;
+
+CREATE TABLE IF NOT EXISTS canvas_index (
+  song        TEXT        NOT NULL,
+  artist      TEXT        NOT NULL,
+  album       TEXT        NOT NULL,
+  duration    INTEGER     NOT NULL,
+  track_id    TEXT,
+  video_url   TEXT,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (song, artist, album, duration)
+);
+
+CREATE INDEX IF NOT EXISTS idx_canvas_expiry ON canvas_index (expires_at);
 `;
 
 export async function runMigrations(): Promise<void> {

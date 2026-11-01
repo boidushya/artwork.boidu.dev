@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSearchKey, computeAlbumTtl, TTL, albumRowToResponse } from '../src/resultCache.ts';
+import { buildSearchKey, trackKey, canvasTtl, computeAlbumTtl, TTL, albumRowToResponse } from '../src/resultCache.ts';
 import type { AlbumCacheRow } from '../src/resultCache.ts';
 
 describe('buildSearchKey', () => {
@@ -221,5 +221,41 @@ describe('computeAlbumTtl', () => {
     });
     assert.equal(ttl, TTL.ALBUM_ANIMATED);
     assert.equal(ttl, 5 * 365 * 86400);
+  });
+});
+
+describe('trackKey', () => {
+  const inputs = [
+    { song: 'Bohemian Rhapsody', artist: 'Queen' },
+    { song: "  Don't Stop Me Now! ", artist: 'AC/DC', albumName: 'Jazz', duration: 209 },
+    { song: 'Tình Yêu', artist: 'Sơn Tùng M-TP', albumName: '', duration: 0 },
+    { song: '夜に駆ける', artist: 'YOASOBI', duration: 261 },
+    { song: 'Song: Part 2', artist: 'X & Y', albumName: 'Vol. 1' },
+    { song: '', artist: '' },
+  ];
+
+  describe('invariants', () => {
+    test('matches the search_index key without the storefront, so existing keys never move', () => {
+      for (const k of inputs) {
+        assert.deepEqual(trackKey(k), buildSearchKey({ storefront: 'pl', ...k }).slice(1));
+      }
+    });
+  });
+
+  test('unknown duration is -1', () => {
+    assert.equal(trackKey({ song: 'a', artist: 'b' })[3], -1);
+  });
+});
+
+describe('canvasTtl', () => {
+  test('a canvas hit lives 30 days', () => {
+    assert.equal(TTL.CANVAS_HIT, 30 * 86400);
+    assert.equal(canvasTtl({ trackId: '39LLxExYz6ewLAcYrzQQyP', videoUrl: 'https://canvaz.scdn.co/x.mp4' }), TTL.CANVAS_HIT);
+  });
+
+  test('a track without canvas and no match live 7 days', () => {
+    assert.equal(TTL.CANVAS_MISS, 7 * 86400);
+    assert.equal(canvasTtl({ trackId: '39LLxExYz6ewLAcYrzQQyP', videoUrl: null }), TTL.CANVAS_MISS);
+    assert.equal(canvasTtl({ trackId: null, videoUrl: null }), TTL.CANVAS_MISS);
   });
 });
