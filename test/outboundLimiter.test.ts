@@ -318,3 +318,44 @@ describe('acquireSlot priority windows', () => {
     });
   });
 });
+
+describe('spotify lane breaker', () => {
+  let originalFetch: typeof globalThis.fetch;
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  async function reset() {
+    globalThis.fetch = async () => new Response('{}');
+    await fetchSpotifyWithRetry('https://spotify.test/a', {}, 'canvasStore', 'test', 'priority');
+  }
+
+  test('a 5xx counts as a failure', async () => {
+    await reset();
+    globalThis.fetch = async () => new Response('', { status: 503 });
+    const res = await fetchSpotifyWithRetry('https://spotify.test/a', {}, 'canvasStore', 'test', 'priority');
+    assert.equal(res.status, 503);
+    assert.equal(getCircuitState('canvasStore').consecutiveFailures, 1);
+  });
+
+  test('a timeout or network error counts as a failure and is rethrown', async () => {
+    await reset();
+    globalThis.fetch = async () => {
+      throw new DOMException('timed out', 'TimeoutError');
+    };
+    await assert.rejects(fetchSpotifyWithRetry('https://spotify.test/a', {}, 'canvasStore', 'test', 'priority'), /timed out/);
+    assert.equal(getCircuitState('canvasStore').consecutiveFailures, 1);
+    await reset();
+  });
+
+  describe('invariants', () => {
+    test('apple 5xx still counts as success, as before', async () => {
+      globalThis.fetch = async () => new Response('', { status: 500 });
+      await fetchAppleWithRetry('https://apple.test/a', {}, 'album', 'test', 'mint', 'priority');
+      assert.equal(getCircuitState('album').consecutiveFailures, 0);
+    });
+  });
+});

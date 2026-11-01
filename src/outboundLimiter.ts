@@ -246,6 +246,7 @@ interface Lane {
   priority: PriorityWindow;
   retryAttempts: number;
   timeoutMs?: number;
+  countServerErrors?: boolean;
   label: string;
 }
 
@@ -279,6 +280,7 @@ export async function fetchSpotifyWithRetry(
     priority: spotifyPriority,
     retryAttempts: SPOTIFY_RETRY_ATTEMPTS,
     timeoutMs: SPOTIFY_TIMEOUT_MS,
+    countServerErrors: true,
     label: 'spotify',
   });
 }
@@ -314,7 +316,13 @@ async function fetchWithRetry(
     } else if (waited > 50) {
       log.info(Tag.RATELIMIT, 'throttle wait', { endpoint, source: lane.label, waitedMs: waited });
     }
-    const res = await fetch(url, lane.timeoutMs ? { ...init, signal: AbortSignal.timeout(lane.timeoutMs) } : init);
+    let res: Response;
+    try {
+      res = await fetch(url, lane.timeoutMs ? { ...init, signal: AbortSignal.timeout(lane.timeoutMs) } : init);
+    } catch (err) {
+      if (lane.countServerErrors) lane.breaker.recordFailure(endpoint);
+      throw err;
+    }
 
     if (res.status === 429) {
       if (attempt < lane.retryAttempts - 1) {
@@ -327,6 +335,11 @@ async function fetchWithRetry(
         await new Promise<void>((r) => setTimeout(r, backoffMs));
         continue;
       }
+      lane.breaker.recordFailure(endpoint);
+      return res;
+    }
+
+    if (lane.countServerErrors && res.status >= 500) {
       lane.breaker.recordFailure(endpoint);
       return res;
     }
