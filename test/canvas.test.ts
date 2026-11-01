@@ -133,3 +133,15 @@ describe('toTrackInput', () => {
     });
   });
 });
+
+describe('regressions', () => {
+  test('regression: a junk duration shares the unknown-duration lookup instead of a key of its own', async () => {
+    stub(() => new Response(SEARCH));
+    await Promise.all([
+      getCanvas({ song: 'Levitating', artist: 'Dua Lipa' }, 'priority'),
+      getCanvas({ song: 'Levitating', artist: 'Dua Lipa', duration: Number.NaN }, 'priority'),
+      getCanvas({ song: 'Levitating', artist: 'Dua Lipa', duration: -3 }, 'priority'),
+    ]);
+    assert.equal(searches, 1);
+  });
+});

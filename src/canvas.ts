@@ -10,19 +10,23 @@ export type CanvasResponse = { trackId: string; videoUrl: string | null } | { er
 
 const inFlight = new Map<string, Promise<CanvasIndexRow>>();
 
-export async function getCanvas(req: TrackKey, tier: Tier): Promise<CanvasResponse> {
+export async function getCanvas(request: TrackKey, tier: Tier): Promise<CanvasResponse> {
+  const req = { ...request, duration: knownDuration(request.duration) };
   const row = (await getCanvasIndex(req)) ?? (await lookupOnce(req, tier));
   return row.trackId ? { trackId: row.trackId, videoUrl: row.videoUrl } : { error: 'No matching tracks found' };
 }
 
 export function toTrackInput(req: TrackKey): TrackInput {
-  const d = req.duration;
   return {
     title: req.song,
     artist: req.artist,
     album: req.albumName ?? '',
-    durationMs: d !== undefined && Number.isFinite(d) && d > 0 ? d * 1000 : 0,
+    durationMs: (knownDuration(req.duration) ?? 0) * 1000,
   };
+}
+
+function knownDuration(d: number | undefined): number | undefined {
+  return d !== undefined && Number.isFinite(d) && d > 0 ? d : undefined;
 }
 
 function lookupOnce(req: TrackKey, tier: Tier): Promise<CanvasIndexRow> {
