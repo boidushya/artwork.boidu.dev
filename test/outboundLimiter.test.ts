@@ -1,6 +1,16 @@
-import { test, describe } from 'node:test';
+import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { TokenBucket, UpstreamRateLimitedError, QueueTimeoutError, bucketForSource, reserveFor } from '../src/outboundLimiter.ts';
+import {
+  TokenBucket,
+  UpstreamRateLimitedError,
+  QueueTimeoutError,
+  bucketForSource,
+  reserveFor,
+  fetchAppleWithRetry,
+  fetchSpotifyWithRetry,
+  getCircuitState,
+  isCircuitOpen,
+} from '../src/outboundLimiter.ts';
 
 describe('TokenBucket.refill', () => {
   test('does not overflow past capacity', () => {
@@ -205,3 +215,83 @@ describe('reserveFor', () => {
   });
 });
 
+
+describe('fetchSpotifyWithRetry', () => {
+  let originalFetch: typeof globalThis.fetch;
+  let calls: { url: string; init?: RequestInit }[];
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    calls = [];
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  function respondWith(status: number) {
+    globalThis.fetch = async (input, init) => {
+      calls.push({ url: String(input), init });
+      return new Response('{}', { status });
+    };
+  }
+
+  test('passes a 200 through and resets the circuit', async () => {
+    respondWith(200);
+    const res = await fetchSpotifyWithRetry('https://spotify.test/a', {}, 'spotifySearch', 'test', 'priority');
+    assert.equal(res.status, 200);
+    assert.equal(calls.length, 1);
+    assert.equal(getCircuitState('spotifySearch').consecutiveFailures, 0);
+  });
+
+  test('sends a timeout signal with every request', async () => {
+    respondWith(200);
+    await fetchSpotifyWithRetry('https://spotify.test/a', { headers: { 'X-Client': 'x' } }, 'canvasStore', 'test', 'priority');
+    assert.ok(calls[0].init?.signal instanceof AbortSignal);
+    assert.equal(new Headers(calls[0].init?.headers).get('X-Client'), 'x');
+  });
+
+  test('returns a 429 without retrying and records one failure', async () => {
+    respondWith(429);
+    const before = getCircuitState('spotifySearch').consecutiveFailures;
+    const res = await fetchSpotifyWithRetry('https://spotify.test/a', {}, 'spotifySearch', 'test', 'priority');
+    assert.equal(res.status, 429);
+    assert.equal(calls.length, 1);
+    assert.equal(getCircuitState('spotifySearch').consecutiveFailures, before + 1);
+    respondWith(200);
+    await fetchSpotifyWithRetry('https://spotify.test/a', {}, 'spotifySearch', 'test', 'priority');
+  });
+
+  describe('invariants', () => {
+    test('apple requests get no timeout signal', async () => {
+      respondWith(200);
+      await fetchAppleWithRetry('https://apple.test/a', {}, 'album', 'test', 'mint', 'priority');
+      assert.equal(calls[0].init?.signal, undefined);
+    });
+
+    test('spotify failures never touch apple circuits', async () => {
+      respondWith(429);
+      const apple = getCircuitState('search');
+      await fetchSpotifyWithRetry('https://spotify.test/a', {}, 'canvasStore', 'test', 'priority');
+      assert.deepEqual(getCircuitState('search'), apple);
+      assert.equal(getCircuitState('canvasStore').consecutiveFailures, 1);
+    });
+  });
+
+  describe('error paths', () => {
+    test('three 429s open the circuit and the next call throws without fetching', async () => {
+      respondWith(429);
+      for (let i = 0; i < 3; i++) {
+        await fetchSpotifyWithRetry('https://spotify.test/a', {}, 'spotifySearch', 'test', 'priority');
+      }
+      assert.equal(isCircuitOpen('spotifySearch'), true);
+      assert.equal(isCircuitOpen('canvasStore'), false);
+      assert.equal(isCircuitOpen('search'), false);
+      const count = calls.length;
+      await assert.rejects(
+        fetchSpotifyWithRetry('https://spotify.test/a', {}, 'spotifySearch', 'test', 'priority'),
+        (err: unknown) => err instanceof UpstreamRateLimitedError && err.endpoint === 'spotifySearch'
+      );
+      assert.equal(calls.length, count);
+    });
+  });
+});

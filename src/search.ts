@@ -2,10 +2,10 @@ import type { AppleMusicSearchResponse, AppleMusicTrack, SearchResult } from './
 import { getWebToken, invalidateWebToken, type TokenSource } from './token';
 import type { Tier } from './priority';
 import { log, Tag } from './logger';
-import { fetchAppleWithRetry, isCircuitOpen, UpstreamRateLimitedError, type AppleEndpoint } from './outboundLimiter';
+import { fetchAppleWithRetry, isCircuitOpen, UpstreamRateLimitedError, type UpstreamEndpoint } from './outboundLimiter';
 
 // Apple rate-limits search per (token, host), so edge and amp are separate budgets.
-const SEARCH_HOSTS: { name: string; base: string; endpoint: Record<TokenSource, AppleEndpoint> }[] = [
+const SEARCH_HOSTS: { name: string; base: string; endpoint: Record<TokenSource, UpstreamEndpoint> }[] = [
   { name: 'edge', base: 'https://amp-api-edge.music.apple.com/v1', endpoint: { mint: 'searchEdge', scrape: 'searchWebEdge' } },
   { name: 'amp', base: 'https://amp-api.music.apple.com/v1', endpoint: { mint: 'search', scrape: 'searchWeb' } },
 ];

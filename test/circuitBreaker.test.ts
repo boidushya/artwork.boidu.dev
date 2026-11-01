@@ -27,7 +27,7 @@ function makeBreaker(clock: { now: () => number }, overrides: Partial<{
   });
 }
 
-describe('createCircuitBreaker — trip conditions', () => {
+describe('createCircuitBreaker: trip conditions', () => {
   test('starts closed for all endpoints', () => {
     const clock = makeClock();
     const cb = makeBreaker(clock);
@@ -59,7 +59,7 @@ describe('createCircuitBreaker — trip conditions', () => {
   });
 });
 
-describe('createCircuitBreaker — cooldown and escalation', () => {
+describe('createCircuitBreaker: cooldown and escalation', () => {
   test('check throws while within open window', () => {
     const clock = makeClock();
     const cb = makeBreaker(clock, { threshold: 1, baseOpenMs: 60_000 });
@@ -136,7 +136,7 @@ describe('createCircuitBreaker — cooldown and escalation', () => {
   });
 });
 
-describe('createCircuitBreaker — recovery', () => {
+describe('createCircuitBreaker: recovery', () => {
   test('recordSuccess fully resets state (failures, trips, openUntil)', () => {
     const clock = makeClock();
     const cb = makeBreaker(clock, { threshold: 1, baseOpenMs: 60_000 });
@@ -190,7 +190,7 @@ describe('createCircuitBreaker — recovery', () => {
   });
 });
 
-describe('createCircuitBreaker — per-endpoint isolation', () => {
+describe('createCircuitBreaker: per-endpoint isolation', () => {
   test('search and album have independent state', () => {
     const clock = makeClock();
     const cb = makeBreaker(clock, { threshold: 2, baseOpenMs: 60_000 });
@@ -207,6 +207,14 @@ describe('createCircuitBreaker — per-endpoint isolation', () => {
     cb.recordFailure('search');
     assert.equal(cb.stateOf('search').trips, 1);
     assert.equal(cb.stateOf('album').trips, 0);
+  });
+
+  test('tripping spotifySearch leaves canvasStore and apple search closed', () => {
+    const cb = makeBreaker(makeClock(), { threshold: 1 });
+    cb.recordFailure('spotifySearch');
+    assert.equal(cb.isOpen('spotifySearch'), true);
+    assert.equal(cb.isOpen('canvasStore'), false);
+    assert.equal(cb.isOpen('search'), false);
   });
 
   test('success on one endpoint does not reset the other', () => {

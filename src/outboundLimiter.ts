@@ -16,11 +16,23 @@ const CIRCUIT_MULTIPLIER = parseFloat(process.env.APPLE_CIRCUIT_MULTIPLIER || '4
 const PRIORITY_RESERVE = parseInt(process.env.APPLE_PRIORITY_RESERVE || '2', 10);
 const STANDARD_MAX_QUEUE_WAIT_MS = parseInt(process.env.APPLE_STANDARD_MAX_WAIT_MS || '1500', 10);
 const PRIORITY_ACTIVE_WINDOW_MS = parseInt(process.env.APPLE_PRIORITY_WINDOW_MS || '5000', 10);
+const SPOTIFY_BURST = parseInt(process.env.SPOTIFY_BURST || '4', 10);
+const SPOTIFY_RATE_PER_SEC = parseFloat(process.env.SPOTIFY_RATE || '1');
+const CANVAS_STORE_BURST = parseInt(process.env.CANVAS_STORE_BURST || '10', 10);
+const CANVAS_STORE_RATE_PER_SEC = parseFloat(process.env.CANVAS_STORE_RATE || '5');
+const SPOTIFY_RETRY_ATTEMPTS = parseInt(process.env.SPOTIFY_RETRY_ATTEMPTS || '1', 10);
+const SPOTIFY_TIMEOUT_MS = parseInt(process.env.SPOTIFY_TIMEOUT_MS || '5000', 10);
+const SPOTIFY_CIRCUIT_THRESHOLD = parseInt(process.env.SPOTIFY_CIRCUIT_THRESHOLD || '3', 10);
+const SPOTIFY_CIRCUIT_BASE_OPEN_MS = parseInt(process.env.SPOTIFY_CIRCUIT_BASE_OPEN_MS || '30000', 10);
+const SPOTIFY_CIRCUIT_MAX_OPEN_MS = parseInt(process.env.SPOTIFY_CIRCUIT_MAX_OPEN_MS || '600000', 10);
+const SPOTIFY_CIRCUIT_MULTIPLIER = parseFloat(process.env.SPOTIFY_CIRCUIT_MULTIPLIER || '2');
 
-export type AppleEndpoint = 'search' | 'searchEdge' | 'searchWeb' | 'searchWebEdge' | 'album';
+const UPSTREAM_ENDPOINTS = ['search', 'searchEdge', 'searchWeb', 'searchWebEdge', 'album', 'spotifySearch', 'canvasStore'] as const;
+export type UpstreamEndpoint = (typeof UPSTREAM_ENDPOINTS)[number];
+export type SpotifyEndpoint = Extract<UpstreamEndpoint, 'spotifySearch' | 'canvasStore'>;
 
 export class UpstreamRateLimitedError extends Error {
-  constructor(public readonly endpoint: AppleEndpoint) {
+  constructor(public readonly endpoint: UpstreamEndpoint) {
     super(`Upstream rate limited: ${endpoint}`);
     this.name = 'UpstreamRateLimitedError';
   }
@@ -33,11 +45,11 @@ interface CircuitState {
 }
 
 export interface CircuitBreaker {
-  check(endpoint: AppleEndpoint): void;
-  recordSuccess(endpoint: AppleEndpoint): void;
-  recordFailure(endpoint: AppleEndpoint): void;
-  isOpen(endpoint: AppleEndpoint): boolean;
-  stateOf(endpoint: AppleEndpoint): Readonly<CircuitState>;
+  check(endpoint: UpstreamEndpoint): void;
+  recordSuccess(endpoint: UpstreamEndpoint): void;
+  recordFailure(endpoint: UpstreamEndpoint): void;
+  isOpen(endpoint: UpstreamEndpoint): boolean;
+  stateOf(endpoint: UpstreamEndpoint): Readonly<CircuitState>;
 }
 
 export function createCircuitBreaker(opts: {
@@ -48,13 +60,9 @@ export function createCircuitBreaker(opts: {
   now?: () => number;
 }): CircuitBreaker {
   const now = opts.now ?? Date.now;
-  const states: Record<AppleEndpoint, CircuitState> = {
-    search: { consecutiveFailures: 0, trips: 0, openUntil: 0 },
-    searchEdge: { consecutiveFailures: 0, trips: 0, openUntil: 0 },
-    searchWeb: { consecutiveFailures: 0, trips: 0, openUntil: 0 },
-    searchWebEdge: { consecutiveFailures: 0, trips: 0, openUntil: 0 },
-    album: { consecutiveFailures: 0, trips: 0, openUntil: 0 },
-  };
+  const states = Object.fromEntries(
+    UPSTREAM_ENDPOINTS.map((e) => [e, { consecutiveFailures: 0, trips: 0, openUntil: 0 }])
+  ) as Record<UpstreamEndpoint, CircuitState>;
 
   function cooldownMsForTrips(trips: number): number {
     const ms = opts.baseOpenMs * Math.pow(opts.multiplier, Math.max(0, trips - 1));
@@ -123,6 +131,17 @@ const circuitBreaker = createCircuitBreaker({
   multiplier: CIRCUIT_MULTIPLIER,
 });
 
+const spotifyCircuitBreaker = createCircuitBreaker({
+  threshold: SPOTIFY_CIRCUIT_THRESHOLD,
+  baseOpenMs: SPOTIFY_CIRCUIT_BASE_OPEN_MS,
+  maxOpenMs: SPOTIFY_CIRCUIT_MAX_OPEN_MS,
+  multiplier: SPOTIFY_CIRCUIT_MULTIPLIER,
+});
+
+function breakerFor(endpoint: UpstreamEndpoint): CircuitBreaker {
+  return endpoint === 'spotifySearch' || endpoint === 'canvasStore' ? spotifyCircuitBreaker : circuitBreaker;
+}
+
 export class TokenBucket {
   tokens: number;
   lastRefill: number;
@@ -162,6 +181,10 @@ export class TokenBucket {
 
 const scrapeBucket = new TokenBucket(SCRAPE_BURST, SCRAPE_RATE_PER_SEC);
 const mintBucket = new TokenBucket(MINT_BURST, MINT_RATE_PER_SEC);
+const spotifyBuckets: Record<SpotifyEndpoint, TokenBucket> = {
+  spotifySearch: new TokenBucket(SPOTIFY_BURST, SPOTIFY_RATE_PER_SEC),
+  canvasStore: new TokenBucket(CANVAS_STORE_BURST, CANVAS_STORE_RATE_PER_SEC),
+};
 
 export function bucketForSource(source: TokenSource): TokenBucket {
   return source === 'mint' ? mintBucket : scrapeBucket;
@@ -183,12 +206,7 @@ export function reserveFor(tier: Tier, priorityActive: boolean, reserve = PRIORI
 
 let lastPriorityAt = 0;
 
-export async function acquireAppleSlot(
-  source: TokenSource,
-  tier: Tier,
-  maxWaitMs?: number
-): Promise<number> {
-  const bucket = bucketForSource(source);
+async function acquireSlot(bucket: TokenBucket, tier: Tier, maxWaitMs?: number): Promise<number> {
   if (tier === 'priority') lastPriorityAt = Date.now();
   const priorityActive = Date.now() - lastPriorityAt < PRIORITY_ACTIVE_WINDOW_MS;
   const reserve = reserveFor(tier, priorityActive);
@@ -208,25 +226,65 @@ export async function acquireAppleSlot(
   }
 }
 
+interface Lane {
+  bucket: TokenBucket;
+  breaker: CircuitBreaker;
+  retryAttempts: number;
+  timeoutMs?: number;
+  label: string;
+}
+
 export async function fetchAppleWithRetry(
   url: string,
   init: RequestInit,
-  endpoint: AppleEndpoint,
+  endpoint: UpstreamEndpoint,
   tag: string,
   source: TokenSource,
   tier: Tier
 ): Promise<Response> {
-  circuitBreaker.check(endpoint);
+  return fetchWithRetry(url, init, endpoint, tag, tier, {
+    bucket: bucketForSource(source),
+    breaker: circuitBreaker,
+    retryAttempts: RETRY_ATTEMPTS,
+    label: source,
+  });
+}
+
+export async function fetchSpotifyWithRetry(
+  url: string,
+  init: RequestInit,
+  endpoint: SpotifyEndpoint,
+  tag: string,
+  tier: Tier
+): Promise<Response> {
+  return fetchWithRetry(url, init, endpoint, tag, tier, {
+    bucket: spotifyBuckets[endpoint],
+    breaker: spotifyCircuitBreaker,
+    retryAttempts: SPOTIFY_RETRY_ATTEMPTS,
+    timeoutMs: SPOTIFY_TIMEOUT_MS,
+    label: 'spotify',
+  });
+}
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  endpoint: UpstreamEndpoint,
+  tag: string,
+  tier: Tier,
+  lane: Lane
+): Promise<Response> {
+  lane.breaker.check(endpoint);
 
   for (let attempt = 0; ; attempt++) {
     let waited: number;
     try {
-      waited = await acquireAppleSlot(source, tier);
+      waited = await acquireSlot(lane.bucket, tier);
     } catch (err) {
       if (err instanceof QueueTimeoutError) {
-        log.warn(Tag.RATELIMIT, 'queue timeout — failing fast', {
+        log.warn(Tag.RATELIMIT, 'queue timeout, failing fast', {
           endpoint,
-          source,
+          source: lane.label,
           waitedMs: err.waitedMs,
           maxWaitMs: err.maxWaitMs,
         });
@@ -235,40 +293,40 @@ export async function fetchAppleWithRetry(
       throw err;
     }
     if (waited > 2000) {
-      log.warn(Tag.RATELIMIT, 'throttle wait', { endpoint, source, waitedMs: waited });
+      log.warn(Tag.RATELIMIT, 'throttle wait', { endpoint, source: lane.label, waitedMs: waited });
     } else if (waited > 50) {
-      log.info(Tag.RATELIMIT, 'throttle wait', { endpoint, source, waitedMs: waited });
+      log.info(Tag.RATELIMIT, 'throttle wait', { endpoint, source: lane.label, waitedMs: waited });
     }
-    const res = await fetch(url, init);
+    const res = await fetch(url, lane.timeoutMs ? { ...init, signal: AbortSignal.timeout(lane.timeoutMs) } : init);
 
     if (res.status === 429) {
-      if (attempt < RETRY_ATTEMPTS - 1) {
+      if (attempt < lane.retryAttempts - 1) {
         const backoffMs = RETRY_BASE_MS * Math.pow(2, attempt);
-        log.warn(tag, '429 from apple, backing off', {
+        log.warn(tag, '429, backing off', {
           attempt: attempt + 1,
-          of: RETRY_ATTEMPTS,
+          of: lane.retryAttempts,
           backoffMs,
         });
         await new Promise<void>((r) => setTimeout(r, backoffMs));
         continue;
       }
-      circuitBreaker.recordFailure(endpoint);
+      lane.breaker.recordFailure(endpoint);
       return res;
     }
 
-    circuitBreaker.recordSuccess(endpoint);
+    lane.breaker.recordSuccess(endpoint);
     return res;
   }
 }
 
-export function isCircuitOpen(endpoint: AppleEndpoint): boolean {
-  return circuitBreaker.isOpen(endpoint);
+export function isCircuitOpen(endpoint: UpstreamEndpoint): boolean {
+  return breakerFor(endpoint).isOpen(endpoint);
 }
 
 // TODO: wire into a /metrics or /health endpoint. Kept exported so the hook
-// is ready when that lands — consume via `getCircuitState('search' | 'album')`.
-export function getCircuitState(endpoint: AppleEndpoint) {
-  return circuitBreaker.stateOf(endpoint);
+// is ready when that lands; consume via `getCircuitState('search' | 'album')`.
+export function getCircuitState(endpoint: UpstreamEndpoint) {
+  return breakerFor(endpoint).stateOf(endpoint);
 }
 
 // TODO: wire into a /metrics or /health endpoint. Calls refill() first so the
