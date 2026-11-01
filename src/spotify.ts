@@ -3,7 +3,7 @@ import { TransientUpstreamError } from './errors';
 import { fetchSpotifyWithRetry, UpstreamRateLimitedError } from './outboundLimiter';
 import { BROWSER_USER_AGENT } from './token';
 import type { Tier } from './priority';
-import { buildSearchQueries, resolve, type SpotifyCandidate, type TrackInput } from './spotifyMatcher';
+import { buildSearchQueries, resolve, score, type SpotifyCandidate, type TrackInput } from './spotifyMatcher';
 
 const EMBED_URL = 'https://open.spotify.com/embed/track/4uLU6hMCjMI75M1A2tKUQC';
 const PATHFINDER_URL = 'https://api-partner.spotify.com/pathfinder/v1/query';
@@ -252,18 +252,29 @@ export async function matchTrack(track: TrackInput, tier: Tier): Promise<string 
     }
     const match = resolve(track, candidates);
     if (match.kind === 'matched') {
-      const { candidate, score } = match.track;
+      const { candidate } = match.track;
       log.info(Tag.SPOTIFY, 'best match', {
         trackId: candidate.id,
         name: candidate.title,
         artist: candidate.artists.join(', '),
         album: candidate.album,
-        score,
+        score: match.track.score,
       });
       return candidate.id;
     }
   }
   if (failure) throw failure;
-  log.info(Tag.SPOTIFY, 'no match', { title: track.title, artist: track.artist, candidates: candidates.length });
+  const closest = candidates.map((c) => score(track, c)).sort((a, b) => b.score - a.score)[0];
+  log.info(Tag.SPOTIFY, 'no match', {
+    title: track.title,
+    artist: track.artist,
+    candidates: candidates.length,
+    closest: closest ? `${closest.candidate.title} | ${closest.candidate.artists.join(', ')}` : 'none',
+    score: closest?.score,
+    titleSim: closest?.titleSim.toFixed(2),
+    artistSim: closest?.artistSim.toFixed(2),
+    durationDelta: closest?.durationDelta,
+    versionConflict: closest?.versionConflict,
+  });
   return null;
 }
