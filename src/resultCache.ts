@@ -189,6 +189,21 @@ export async function getCanvasIndex(
   return { trackId: row.track_id, videoUrl: row.video_url };
 }
 
+export async function getCanvasByTrackId(trackId: string): Promise<CanvasIndexRow | null> {
+  const result = await query<{ video_url: string | null }>(
+    `SELECT video_url
+     FROM canvas_index
+     WHERE track_id = $1 AND expires_at > now()
+     ORDER BY expires_at DESC
+     LIMIT 1`,
+    [trackId]
+  );
+  if (!result || result.rows.length === 0) return null;
+  const videoUrl = result.rows[0].video_url;
+  log.info(Tag.CACHE_HIT, 'canvas_index by track', { trackId, canvas: videoUrl !== null });
+  return { trackId, videoUrl };
+}
+
 export async function upsertCanvasIndex(k: TrackKey, row: CanvasIndexRow): Promise<void> {
   const ttl = canvasTtl(row);
   const [song, artist, album, duration] = trackKey(k);

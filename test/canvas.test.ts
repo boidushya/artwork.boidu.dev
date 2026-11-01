@@ -2,7 +2,7 @@ import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { getCanvas, toTrackInput } from '../src/canvas.ts';
-import { invalidateSpotifyToken } from '../src/spotify.ts';
+import { clearSpotifySearchCache, invalidateSpotifyToken } from '../src/spotify.ts';
 import { TransientUpstreamError } from '../src/errors.ts';
 import { UpstreamRateLimitedError } from '../src/outboundLimiter.ts';
 
@@ -33,6 +33,7 @@ beforeEach(() => {
   originalFetch = globalThis.fetch;
   searches = 0;
   invalidateSpotifyToken();
+  clearSpotifySearchCache();
 });
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -80,6 +81,7 @@ describe('getCanvas', () => {
     test('a finished lookup does not block the next one', async () => {
       stub(() => new Response(SEARCH));
       await getCanvas({ song: 'Levitating', artist: 'Dua Lipa', duration: 204 }, 'priority');
+      clearSpotifySearchCache();
       await getCanvas({ song: 'Levitating', artist: 'Dua Lipa', duration: 204 }, 'priority');
       assert.equal(searches, 2, 'no DATABASE_URL in tests, so the second call looks up again');
     });
@@ -98,6 +100,14 @@ describe('getCanvas', () => {
       await assert.rejects(getCanvas({ song: 'Levitating', artist: 'Dua Lipa' }, 'priority'), UpstreamRateLimitedError);
       stub(() => new Response(SEARCH));
       await getCanvas({ song: 'Levitating', artist: 'Dua Lipa' }, 'priority');
+    });
+
+    test('a canvas store failure after a match becomes a transient error', async () => {
+      stub(
+        () => new Response(SEARCH),
+        () => new Response('', { status: 502 })
+      );
+      await assert.rejects(getCanvas({ song: 'Levitating', artist: 'Dua Lipa' }, 'priority'), TransientUpstreamError);
     });
 
     test('other failures become a transient error', async () => {

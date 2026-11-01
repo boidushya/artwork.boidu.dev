@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS canvas_index (
 );
 
 CREATE INDEX IF NOT EXISTS idx_canvas_expiry ON canvas_index (expires_at);
+CREATE INDEX IF NOT EXISTS idx_canvas_track ON canvas_index (track_id);
 `;
 
 export async function runMigrations(): Promise<void> {

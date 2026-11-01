@@ -1,8 +1,15 @@
 import { log, Tag } from './logger';
 import { TransientUpstreamError } from './errors';
 import { UpstreamRateLimitedError } from './outboundLimiter';
-import { getCanvasIndex, trackKey, upsertCanvasIndex, type CanvasIndexRow, type TrackKey } from './resultCache';
-import { lookupCanvas } from './spotify';
+import {
+  getCanvasByTrackId,
+  getCanvasIndex,
+  trackKey,
+  upsertCanvasIndex,
+  type CanvasIndexRow,
+  type TrackKey,
+} from './resultCache';
+import { fetchCanvasUrl, matchTrack } from './spotify';
 import type { TrackInput } from './spotifyMatcher';
 import type { Tier } from './priority';
 
@@ -47,9 +54,10 @@ function lookupOnce(req: TrackKey, tier: Tier): Promise<CanvasIndexRow> {
 
 async function lookupAndStore(req: TrackKey, tier: Tier): Promise<CanvasIndexRow> {
   try {
-    const result = await lookupCanvas(toTrackInput(req), tier);
-    const row: CanvasIndexRow =
-      result.kind === 'matched' ? { trackId: result.trackId, videoUrl: result.videoUrl } : { trackId: null, videoUrl: null };
+    const trackId = await matchTrack(toTrackInput(req), tier);
+    const row: CanvasIndexRow = trackId
+      ? ((await getCanvasByTrackId(trackId)) ?? { trackId, videoUrl: await fetchCanvasUrl(trackId, tier) })
+      : { trackId: null, videoUrl: null };
     await upsertCanvasIndex(req, row);
     return row;
   } catch (error) {

@@ -5,9 +5,11 @@ import {
   fetchCanvasUrl,
   getSpotifyToken,
   invalidateSpotifyToken,
-  lookupCanvas,
+  matchTrack,
+  clearSpotifySearchCache,
   searchSpotify,
   SpotifyHashRotatedError,
+  SpotifyTokenError,
 } from '../src/spotify.ts';
 import { TransientUpstreamError } from '../src/errors.ts';
 import { UpstreamRateLimitedError } from '../src/outboundLimiter.ts';
@@ -56,6 +58,7 @@ beforeEach(() => {
   originalFetch = globalThis.fetch;
   calls = [];
   invalidateSpotifyToken();
+  clearSpotifySearchCache();
 });
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -248,18 +251,20 @@ describe('fetchCanvasUrl', () => {
     assert.equal(await fetchCanvasUrl(NO_CANVAS_ID, 'priority'), null);
   });
 
-  describe('edge cases', () => {
-    test('an invalid track id is a miss without any request', async () => {
+  describe('regressions', () => {
+    test('regression: an invalid track id is a failure without any request, never a cached miss', async () => {
       stub({});
       for (const id of ['abc', '', `${ORIGINAL_ID}x`, '../../etc/passwd/aaaaaa']) {
-        assert.equal(await fetchCanvasUrl(id, 'priority'), null);
+        await assert.rejects(fetchCanvasUrl(id, 'priority'), TransientUpstreamError);
       }
       assert.equal(calls.length, 0);
     });
 
-    test('a non-https url is treated as no canvas', async () => {
-      stub({ canvas: ok(CANVAS_HIT.replace('https://canvaz', 'http://canvaz')) });
-      assert.equal(await fetchCanvasUrl(ORIGINAL_ID, 'priority'), null);
+    test('regression: an entry without a usable https url is a failure, only null means no canvas', async () => {
+      for (const entry of [{}, { url: '' }, { url: 42 }, { url: 'http://canvaz.scdn.co/x.mp4' }]) {
+        stub({ canvas: ok(JSON.stringify({ data: { [ORIGINAL_ID]: entry } })) });
+        await assert.rejects(fetchCanvasUrl(ORIGINAL_ID, 'priority'), TransientUpstreamError, JSON.stringify(entry));
+      }
     });
   });
 
@@ -293,66 +298,70 @@ describe('fetchCanvasUrl', () => {
   });
 });
 
-describe('lookupCanvas', () => {
-  test('stops at the first query that matches', async () => {
-    stub({ embed: ok(EMBED), search: ok(SEARCH), canvas: ok(CANVAS_HIT) });
-    const result = await lookupCanvas(LEVITATING, 'priority');
-    assert.equal(result.kind, 'matched');
-    assert.equal(result.kind === 'matched' && result.trackId, ORIGINAL_ID);
-    assert.match(result.kind === 'matched' ? result.videoUrl ?? '' : '', /canvaz\.scdn\.co/);
+describe('matchTrack', () => {
+  test('stops at the first query that matches and makes no canvas call', async () => {
+    stub({ embed: ok(EMBED), search: ok(SEARCH) });
+    assert.equal(await matchTrack(LEVITATING, 'priority'), ORIGINAL_ID);
     assert.equal(searchCalls().length, 1);
-    assert.equal(canvasCalls().length, 1);
-  });
-
-  test('a matched track without canvas returns a null videoUrl', async () => {
-    stub({ embed: ok(EMBED), search: ok(SEARCH), canvas: ok(JSON.stringify({ data: { [ORIGINAL_ID]: null } })) });
-    const result = await lookupCanvas(LEVITATING, 'priority');
-    assert.deepEqual(result, { kind: 'matched', trackId: ORIGINAL_ID, videoUrl: null });
+    assert.equal(canvasCalls().length, 0);
   });
 
   test('a failed query followed by a match returns the match', async () => {
     let n = 0;
-    stub({ embed: ok(EMBED), search: () => (n++ === 0 ? new Response('', { status: 500 }) : new Response(SEARCH)), canvas: ok(CANVAS_HIT) });
-    const result = await lookupCanvas(LEVITATING, 'priority');
-    assert.equal(result.kind, 'matched');
+    stub({ embed: ok(EMBED), search: () => (n++ === 0 ? new Response('', { status: 500 }) : new Response(SEARCH)) });
+    assert.equal(await matchTrack(LEVITATING, 'priority'), ORIGINAL_ID);
     assert.equal(searchCalls().length, 2);
   });
 
-  test('no match on any query is noMatch without a canvas call', async () => {
+  test('no match on any query is null', async () => {
     stub({ embed: ok(EMBED), search: ok(SEARCH) });
-    const result = await lookupCanvas(SANDMAN, 'priority');
-    assert.deepEqual(result, { kind: 'noMatch' });
+    assert.equal(await matchTrack(SANDMAN, 'priority'), null);
     assert.equal(searchCalls().length, 2);
-    assert.equal(canvasCalls().length, 0);
+  });
+
+  describe('invariants', () => {
+    test('the same query is answered from memory, so a different duration costs no search', async () => {
+      stub({ embed: ok(EMBED), search: ok(SEARCH) });
+      await matchTrack(LEVITATING, 'priority');
+      await matchTrack({ ...LEVITATING, durationMs: 203000 }, 'priority');
+      await matchTrack({ ...LEVITATING, durationMs: 0 }, 'priority');
+      assert.equal(searchCalls().length, 1);
+    });
+
+    test('failed searches are not remembered', async () => {
+      stub({ embed: ok(EMBED), search: status(500) });
+      await assert.rejects(matchTrack(LEVITATING, 'priority'));
+      stub({ embed: ok(EMBED), search: ok(SEARCH) });
+      assert.equal(await matchTrack(LEVITATING, 'priority'), ORIGINAL_ID);
+    });
   });
 
   describe('error paths', () => {
     test('a failure and no match is a failure, not a miss', async () => {
       let n = 0;
       stub({ embed: ok(EMBED), search: () => (n++ === 0 ? new Response('', { status: 500 }) : new Response(SEARCH)) });
-      await assert.rejects(
-        lookupCanvas(SANDMAN, 'priority'),
-        TransientUpstreamError
-      );
+      await assert.rejects(matchTrack(SANDMAN, 'priority'), TransientUpstreamError);
     });
 
     test('hash rotation stops after one search', async () => {
       stub({ embed: ok(EMBED), search: ok(HASH_ROTATED) });
-      await assert.rejects(lookupCanvas(LEVITATING, 'priority'), SpotifyHashRotatedError);
+      await assert.rejects(matchTrack(LEVITATING, 'priority'), SpotifyHashRotatedError);
       assert.equal(searchCalls().length, 1);
     });
 
     test('a rate limit stops after one search', async () => {
       stub({ embed: ok(EMBED), search: status(429) });
-      await assert.rejects(lookupCanvas(LEVITATING, 'priority'), UpstreamRateLimitedError);
+      await assert.rejects(matchTrack(LEVITATING, 'priority'), UpstreamRateLimitedError);
       assert.equal(searchCalls().length, 1);
-      stub({ embed: ok(EMBED), search: ok(SEARCH), canvas: ok(CANVAS_HIT) });
-      await lookupCanvas(LEVITATING, 'priority');
+      stub({ embed: ok(EMBED), search: ok(SEARCH) });
+      await matchTrack(LEVITATING, 'priority');
     });
 
-    test('a canvas store failure after a match is a failure', async () => {
-      stub({ embed: ok(EMBED), search: ok(SEARCH), canvas: status(502) });
-      await assert.rejects(lookupCanvas(LEVITATING, 'priority'), TransientUpstreamError);
+    test('regression: a token failure stops after one embed fetch and no search', async () => {
+      stub({ embed: status(500), search: ok(SEARCH) });
+      await assert.rejects(matchTrack(LEVITATING, 'priority'), SpotifyTokenError);
+      assert.equal(embedCalls().length, 1);
+      assert.equal(searchCalls().length, 0);
     });
   });
 });

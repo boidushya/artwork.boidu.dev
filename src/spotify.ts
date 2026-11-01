@@ -14,6 +14,8 @@ const EMBED_TIMEOUT_MS = 5000;
 const EXPIRY_SKEW_MS = 60_000;
 const TRACK_ID = /^[A-Za-z0-9]{22}$/;
 const MAX_SEARCH_TERM_LENGTH = 250;
+const SEARCH_CACHE_TTL_MS = 3600_000;
+const SEARCH_CACHE_MAX_ENTRIES = 2000;
 
 export class SpotifyHashRotatedError extends TransientUpstreamError {
   constructor() {
@@ -22,9 +24,12 @@ export class SpotifyHashRotatedError extends TransientUpstreamError {
   }
 }
 
-export type CanvasLookup =
-  | { kind: 'noMatch' }
-  | { kind: 'matched'; trackId: string; videoUrl: string | null };
+export class SpotifyTokenError extends TransientUpstreamError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SpotifyTokenError';
+  }
+}
 
 interface PathfinderTrack {
   id?: string;
@@ -56,13 +61,18 @@ export function invalidateSpotifyToken(token?: string): void {
 }
 
 async function fetchSession(): Promise<string> {
-  const res = await fetch(EMBED_URL, {
-    signal: AbortSignal.timeout(EMBED_TIMEOUT_MS),
-    headers: { 'User-Agent': BROWSER_USER_AGENT },
-  });
-  if (!res.ok) throw new TransientUpstreamError(`Spotify embed HTTP ${res.status}`);
+  let res: Response;
+  try {
+    res = await fetch(EMBED_URL, {
+      signal: AbortSignal.timeout(EMBED_TIMEOUT_MS),
+      headers: { 'User-Agent': BROWSER_USER_AGENT },
+    });
+  } catch (error) {
+    throw new SpotifyTokenError(`Spotify embed fetch failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!res.ok) throw new SpotifyTokenError(`Spotify embed HTTP ${res.status}`);
   const parsed = parseEmbedSession(await res.text());
-  if (!parsed) throw new TransientUpstreamError('Spotify embed page had no session token');
+  if (!parsed) throw new SpotifyTokenError('Spotify embed page had no session token');
   session = parsed;
   log.info(Tag.SPOTIFY, 'token refreshed', { expiresInS: Math.round((parsed.expiresAt - Date.now()) / 1000) });
   return parsed.token;
@@ -165,12 +175,15 @@ async function searchWithToken(url: string, token: string, tier: Tier): Promise<
     Tag.SPOTIFY,
     tier
   );
-  if (res.status === 401) invalidateSpotifyToken(token);
+  if (res.status === 401) {
+    invalidateSpotifyToken(token);
+    await res.body?.cancel();
+  }
   return res;
 }
 
 export async function fetchCanvasUrl(trackId: string, tier: Tier): Promise<string | null> {
-  if (!TRACK_ID.test(trackId)) return null;
+  if (!TRACK_ID.test(trackId)) throw new TransientUpstreamError(`Malformed Spotify track id ${JSON.stringify(trackId)}`);
   const start = Date.now();
   const res = await fetchSpotifyWithRetry(
     `${CANVAS_STORE_URL}/${trackId}`,
@@ -189,26 +202,52 @@ export async function fetchCanvasUrl(trackId: string, tier: Tier): Promise<strin
     throw new TransientUpstreamError(`Canvas store HTTP ${res.status}`);
   }
   const body = await readJson<{ data?: Record<string, { url?: unknown } | null> }>(res, 'Canvas store');
-  if (!body.data || !(trackId in body.data)) {
+  const entry = body.data?.[trackId];
+  const url = entry?.url;
+  const videoUrl = entry === null ? null : typeof url === 'string' && url.startsWith('https://') ? url : undefined;
+  if (videoUrl === undefined) {
     log.error(Tag.CANVAS, 'canvas store response shape changed', { trackId });
     throw new TransientUpstreamError('Canvas store response shape changed');
   }
-  const url = body.data[trackId]?.url;
-  const videoUrl = typeof url === 'string' && url.startsWith('https://') ? url : null;
   log.info(Tag.CANVAS, '← ok', { trackId, ms, canvas: videoUrl !== null });
   return videoUrl;
 }
 
-export async function lookupCanvas(track: TrackInput, tier: Tier): Promise<CanvasLookup> {
+const searchCache = new Map<string, { at: number; candidates: SpotifyCandidate[] }>();
+
+export function clearSpotifySearchCache(): void {
+  searchCache.clear();
+}
+
+async function searchSpotifyCached(query: string, tier: Tier): Promise<SpotifyCandidate[]> {
+  const hit = searchCache.get(query);
+  if (hit && Date.now() - hit.at < SEARCH_CACHE_TTL_MS) return hit.candidates;
+  const candidates = await searchSpotify(query, tier);
+  searchCache.delete(query);
+  searchCache.set(query, { at: Date.now(), candidates });
+  if (searchCache.size > SEARCH_CACHE_MAX_ENTRIES) {
+    const oldest = searchCache.keys().next().value;
+    if (oldest !== undefined) searchCache.delete(oldest);
+  }
+  return candidates;
+}
+
+export async function matchTrack(track: TrackInput, tier: Tier): Promise<string | null> {
   const candidates: SpotifyCandidate[] = [];
   let failure: unknown = null;
   for (const query of buildSearchQueries(track)) {
     try {
-      candidates.push(...(await searchSpotify(query, tier)));
+      candidates.push(...(await searchSpotifyCached(query, tier)));
     } catch (error) {
       failure = error;
       // Later queries hit the same wall and spend more of the shared budget.
-      if (error instanceof UpstreamRateLimitedError || error instanceof SpotifyHashRotatedError) break;
+      if (
+        error instanceof UpstreamRateLimitedError ||
+        error instanceof SpotifyHashRotatedError ||
+        error instanceof SpotifyTokenError
+      ) {
+        break;
+      }
       continue;
     }
     const match = resolve(track, candidates);
@@ -221,10 +260,10 @@ export async function lookupCanvas(track: TrackInput, tier: Tier): Promise<Canva
         album: candidate.album,
         score,
       });
-      return { kind: 'matched', trackId: candidate.id, videoUrl: await fetchCanvasUrl(candidate.id, tier) };
+      return candidate.id;
     }
   }
   if (failure) throw failure;
   log.info(Tag.SPOTIFY, 'no match', { title: track.title, artist: track.artist, candidates: candidates.length });
-  return { kind: 'noMatch' };
+  return null;
 }
