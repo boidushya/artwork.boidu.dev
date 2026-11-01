@@ -1,0 +1,735 @@
+{
+  "data": {
+    "searchV2": {
+      "tracksV2": {
+        "items": [
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "39LLxExYz6ewLAcYrzQQyP",
+                "uri": "spotify:track:39LLxExYz6ewLAcYrzQQyP",
+                "name": "Levitating",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Dua Lipa"
+                      },
+                      "uri": "spotify:artist:6M2wZ9GZgrQXHCFfjv46we"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "7fJJK56U9fHixgO0HQkhtI",
+                  "name": "Future Nostalgia",
+                  "uri": "spotify:album:7fJJK56U9fHixgO0HQkhtI"
+                },
+                "duration": {
+                  "totalMilliseconds": 203807
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "5nujrmhLynf4yMoMtj8AQF",
+                "uri": "spotify:track:5nujrmhLynf4yMoMtj8AQF",
+                "name": "Levitating (feat. DaBaby)",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Dua Lipa"
+                      },
+                      "uri": "spotify:artist:6M2wZ9GZgrQXHCFfjv46we"
+                    },
+                    {
+                      "profile": {
+                        "name": "DaBaby"
+                      },
+                      "uri": "spotify:artist:4r63FhuTkUYltbVAg5TQnk"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "5lKlFlReHOLShQKyRv6AL9",
+                  "name": "Future Nostalgia",
+                  "uri": "spotify:album:5lKlFlReHOLShQKyRv6AL9"
+                },
+                "duration": {
+                  "totalMilliseconds": 203064
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "4NNV57ExUCe1wGMvVA1XrA",
+                "uri": "spotify:track:4NNV57ExUCe1wGMvVA1XrA",
+                "name": "Levitating - Indian Mix",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Bassick Kalaignan"
+                      },
+                      "uri": "spotify:artist:6ShjNtvK8qzxJo4BtaQ8sb"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "1Gs8I6sVOHcK9BaWmy2knt",
+                  "name": "Levitating (Indian Mix)",
+                  "uri": "spotify:album:1Gs8I6sVOHcK9BaWmy2knt"
+                },
+                "duration": {
+                  "totalMilliseconds": 181820
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "463CkQjx2Zk1yXoBuierM9",
+                "uri": "spotify:track:463CkQjx2Zk1yXoBuierM9",
+                "name": "Levitating (feat. DaBaby)",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Dua Lipa"
+                      },
+                      "uri": "spotify:artist:6M2wZ9GZgrQXHCFfjv46we"
+                    },
+                    {
+                      "profile": {
+                        "name": "DaBaby"
+                      },
+                      "uri": "spotify:artist:4r63FhuTkUYltbVAg5TQnk"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "04m06KhJUuwe1Q487puIud",
+                  "name": "Levitating (feat. DaBaby)",
+                  "uri": "spotify:album:04m06KhJUuwe1Q487puIud"
+                },
+                "duration": {
+                  "totalMilliseconds": 203064
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "1dI77VhaLcQSgQLSnIs03D",
+                "uri": "spotify:track:1dI77VhaLcQSgQLSnIs03D",
+                "name": "Levitating",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Dua Lipa"
+                      },
+                      "uri": "spotify:artist:6M2wZ9GZgrQXHCFfjv46we"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "5lKlFlReHOLShQKyRv6AL9",
+                  "name": "Future Nostalgia",
+                  "uri": "spotify:album:5lKlFlReHOLShQKyRv6AL9"
+                },
+                "duration": {
+                  "totalMilliseconds": 203807
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "0pk1hxhJLBSZZ5RKBhcwOa",
+                "uri": "spotify:track:0pk1hxhJLBSZZ5RKBhcwOa",
+                "name": "Levitating (feat. Madonna and Missy Elliott) [The Blessed Madonna Remix]",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Dua Lipa"
+                      },
+                      "uri": "spotify:artist:6M2wZ9GZgrQXHCFfjv46we"
+                    },
+                    {
+                      "profile": {
+                        "name": "Madonna"
+                      },
+                      "uri": "spotify:artist:6tbjWDEIzxoDsBA1FuhfPW"
+                    },
+                    {
+                      "profile": {
+                        "name": "Missy Elliott"
+                      },
+                      "uri": "spotify:artist:2wIVse2owClT7go1WT98tk"
+                    },
+                    {
+                      "profile": {
+                        "name": "The Blessed Madonna"
+                      },
+                      "uri": "spotify:artist:4TvhRzxIL1le2PWCeUqxQw"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "6smIdnnGseiA4jiEcOjcic",
+                  "name": "Levitating (feat. Madonna and Missy Elliott) [The Blessed Madonna Remix]",
+                  "uri": "spotify:album:6smIdnnGseiA4jiEcOjcic"
+                },
+                "duration": {
+                  "totalMilliseconds": 250280
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "2i4Cd4c6uEjLZgdy2BQbZO",
+                "uri": "spotify:track:2i4Cd4c6uEjLZgdy2BQbZO",
+                "name": "Levitating (feat. Prakriti Kakar & Sukriti Kakar) [Amaal Mallik Remix]",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Dua Lipa"
+                      },
+                      "uri": "spotify:artist:6M2wZ9GZgrQXHCFfjv46we"
+                    },
+                    {
+                      "profile": {
+                        "name": "Amaal Mallik"
+                      },
+                      "uri": "spotify:artist:76fuWYgIf3TVIopTs3vaJ6"
+                    },
+                    {
+                      "profile": {
+                        "name": "Prakriti Kakar"
+                      },
+                      "uri": "spotify:artist:59pq5Vw16UDkR9txoPKv86"
+                    },
+                    {
+                      "profile": {
+                        "name": "Sukriti Kakar"
+                      },
+                      "uri": "spotify:artist:3FgHkfb3IqG4WKuVe1xCXM"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "7FqeFeXFIyTumRxQPcUj6q",
+                  "name": "Levitating (feat. Prakriti Kakar & Sukriti Kakar) [Amaal Mallik Remix]",
+                  "uri": "spotify:album:7FqeFeXFIyTumRxQPcUj6q"
+                },
+                "duration": {
+                  "totalMilliseconds": 156291
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "6pn6lXv8UjpMFAo9znYOUC",
+                "uri": "spotify:track:6pn6lXv8UjpMFAo9znYOUC",
+                "name": "Levitating",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Dua Lipa"
+                      },
+                      "uri": "spotify:artist:6M2wZ9GZgrQXHCFfjv46we"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "5HaIikztvnTIwx2QA5YsmX",
+                  "name": "Levitating EP",
+                  "uri": "spotify:album:5HaIikztvnTIwx2QA5YsmX"
+                },
+                "duration": {
+                  "totalMilliseconds": 203807
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "41z2bSbbtJ9wiIee4RXdi5",
+                "uri": "spotify:track:41z2bSbbtJ9wiIee4RXdi5",
+                "name": "Levitating",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Dua Lipa"
+                      },
+                      "uri": "spotify:artist:6M2wZ9GZgrQXHCFfjv46we"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "0JeyP8r2hBxYIoxXv11XiX",
+                  "name": "Future Nostalgia (The Moonlight Edition)",
+                  "uri": "spotify:album:0JeyP8r2hBxYIoxXv11XiX"
+                },
+                "duration": {
+                  "totalMilliseconds": 203807
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "12d6L7D2rRUv6XgF73GBAi",
+                "uri": "spotify:track:12d6L7D2rRUv6XgF73GBAi",
+                "name": "Levitating",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Dua Lipa"
+                      },
+                      "uri": "spotify:artist:6M2wZ9GZgrQXHCFfjv46we"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "6dr5OXklXimj3DRMhQEYYz",
+                  "name": "Levitating EP",
+                  "uri": "spotify:album:6dr5OXklXimj3DRMhQEYYz"
+                },
+                "duration": {
+                  "totalMilliseconds": 203807
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "0v2boHmWtxMTD2REGN8MbK",
+                "uri": "spotify:track:0v2boHmWtxMTD2REGN8MbK",
+                "name": "Levitating (feat. DaBaby)",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Dua Lipa"
+                      },
+                      "uri": "spotify:artist:6M2wZ9GZgrQXHCFfjv46we"
+                    },
+                    {
+                      "profile": {
+                        "name": "DaBaby"
+                      },
+                      "uri": "spotify:artist:4r63FhuTkUYltbVAg5TQnk"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "0JeyP8r2hBxYIoxXv11XiX",
+                  "name": "Future Nostalgia (The Moonlight Edition)",
+                  "uri": "spotify:album:0JeyP8r2hBxYIoxXv11XiX"
+                },
+                "duration": {
+                  "totalMilliseconds": 203064
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "4vq7KUT7qvqw9owOCtEyKx",
+                "uri": "spotify:track:4vq7KUT7qvqw9owOCtEyKx",
+                "name": "Ada Bommale",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Rzee"
+                      },
+                      "uri": "spotify:artist:0JDjRH8br9CkytJV93g1Et"
+                    },
+                    {
+                      "profile": {
+                        "name": "Chinmayi Kiranlal"
+                      },
+                      "uri": "spotify:artist:2i3mTDaZz7JPB07kenetXf"
+                    },
+                    {
+                      "profile": {
+                        "name": "Minya Panicker"
+                      },
+                      "uri": "spotify:artist:3nQURhsYmFmJap50kBPVBH"
+                    },
+                    {
+                      "profile": {
+                        "name": "Nila Raj"
+                      },
+                      "uri": "spotify:artist:4VexGwZW6B1MJZhS6g9KeT"
+                    },
+                    {
+                      "profile": {
+                        "name": "Heykarthii"
+                      },
+                      "uri": "spotify:artist:63kT97v7dkMndQKpF3KUmX"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "4FrW5hkwZcdlxIIfHNKxf0",
+                  "name": "Vaazha 2 (Original Motion Picture Soundtrack)",
+                  "uri": "spotify:album:4FrW5hkwZcdlxIIfHNKxf0"
+                },
+                "duration": {
+                  "totalMilliseconds": 180148
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "48QmG1dfvMuYLxMPt7KSRA",
+                "uri": "spotify:track:48QmG1dfvMuYLxMPt7KSRA",
+                "name": "No Lie",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Sean Paul"
+                      },
+                      "uri": "spotify:artist:3Isy6kedDrgPYoTS1dazA9"
+                    },
+                    {
+                      "profile": {
+                        "name": "Dua Lipa"
+                      },
+                      "uri": "spotify:artist:6M2wZ9GZgrQXHCFfjv46we"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "5xrOcCoO3jkXRjHQjfESM6",
+                  "name": "Mad Love The Prequel",
+                  "uri": "spotify:album:5xrOcCoO3jkXRjHQjfESM6"
+                },
+                "duration": {
+                  "totalMilliseconds": 221176
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "6QQmefVNuQNJ0U7vD6Rto9",
+                "uri": "spotify:track:6QQmefVNuQNJ0U7vD6Rto9",
+                "name": "Ada Bommale - From \"Vaazha 2\"",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Rzee"
+                      },
+                      "uri": "spotify:artist:0JDjRH8br9CkytJV93g1Et"
+                    },
+                    {
+                      "profile": {
+                        "name": "Chinmayi Kiranlal"
+                      },
+                      "uri": "spotify:artist:2i3mTDaZz7JPB07kenetXf"
+                    },
+                    {
+                      "profile": {
+                        "name": "Minya Panicker"
+                      },
+                      "uri": "spotify:artist:3nQURhsYmFmJap50kBPVBH"
+                    },
+                    {
+                      "profile": {
+                        "name": "Nila Raj"
+                      },
+                      "uri": "spotify:artist:4VexGwZW6B1MJZhS6g9KeT"
+                    },
+                    {
+                      "profile": {
+                        "name": "Heykarthii"
+                      },
+                      "uri": "spotify:artist:63kT97v7dkMndQKpF3KUmX"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "2NgATqmHeZ5haUnoD7qlhX",
+                  "name": "Ada Bommale (From \"Vaazha 2\")",
+                  "uri": "spotify:album:2NgATqmHeZ5haUnoD7qlhX"
+                },
+                "duration": {
+                  "totalMilliseconds": 180148
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "0LnS7aOdOdI1dNKZqdOLz4",
+                "uri": "spotify:track:0LnS7aOdOdI1dNKZqdOLz4",
+                "name": "Dua Lipa",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Jack Harlow"
+                      },
+                      "uri": "spotify:artist:2LIk90788K0zvyj2JJVwkJ"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "2eE8BVirX9VF8Di9hD90iw",
+                  "name": "Come Home The Kids Miss You",
+                  "uri": "spotify:album:2eE8BVirX9VF8Di9hD90iw"
+                },
+                "duration": {
+                  "totalMilliseconds": 135053
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "3JXF3LsUjyDIHjuwhXxdjo",
+                "uri": "spotify:track:3JXF3LsUjyDIHjuwhXxdjo",
+                "name": "Sweetest Pie",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Megan Thee Stallion"
+                      },
+                      "uri": "spotify:artist:181bsRPaVXVlUKXrxwZfHK"
+                    },
+                    {
+                      "profile": {
+                        "name": "Dua Lipa"
+                      },
+                      "uri": "spotify:artist:6M2wZ9GZgrQXHCFfjv46we"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "4YP0h2KGDb20eJuStnBvim",
+                  "name": "Traumazine",
+                  "uri": "spotify:album:4YP0h2KGDb20eJuStnBvim"
+                },
+                "duration": {
+                  "totalMilliseconds": 201334
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "1Qb0RrlL3BSbppJBW9ZrOe",
+                "uri": "spotify:track:1Qb0RrlL3BSbppJBW9ZrOe",
+                "name": "Dua Lipa",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Jay"
+                      },
+                      "uri": "spotify:artist:2bwK06t9vIkISiD7xNvTSD"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "1WBmZJkKJCf4JuUJEiNOzC",
+                  "name": "Dua Lipa",
+                  "uri": "spotify:album:1WBmZJkKJCf4JuUJEiNOzC"
+                },
+                "duration": {
+                  "totalMilliseconds": 132750
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "7mFj0LlWtEJaEigguaWqYh",
+                "uri": "spotify:track:7mFj0LlWtEJaEigguaWqYh",
+                "name": "Sweetest Pie",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Megan Thee Stallion"
+                      },
+                      "uri": "spotify:artist:181bsRPaVXVlUKXrxwZfHK"
+                    },
+                    {
+                      "profile": {
+                        "name": "Dua Lipa"
+                      },
+                      "uri": "spotify:artist:6M2wZ9GZgrQXHCFfjv46we"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "4qw41n8iWrdR70Ui3hYBPv",
+                  "name": "Sweetest Pie",
+                  "uri": "spotify:album:4qw41n8iWrdR70Ui3hYBPv"
+                },
+                "duration": {
+                  "totalMilliseconds": 201334
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "59s0s39NFWScuHDbHytI14",
+                "uri": "spotify:track:59s0s39NFWScuHDbHytI14",
+                "name": "Indeciso",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Reik"
+                      },
+                      "uri": "spotify:artist:0vR2qb8m9WHeZ5ByCbimq2"
+                    },
+                    {
+                      "profile": {
+                        "name": "J Balvin"
+                      },
+                      "uri": "spotify:artist:1vyhD5VmyZ7KMfW5gqLgo5"
+                    },
+                    {
+                      "profile": {
+                        "name": "Lalo Ebratt"
+                      },
+                      "uri": "spotify:artist:1GAymyGBvB4gQy5Z5LZ1Wj"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "4qecT0ZJrf35thz2WaEm6P",
+                  "name": "Indeciso",
+                  "uri": "spotify:album:4qecT0ZJrf35thz2WaEm6P"
+                },
+                "duration": {
+                  "totalMilliseconds": 217253
+                }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "TrackResponseWrapper",
+              "data": {
+                "__typename": "Track",
+                "id": "1bE7tFgpFBFy3mGJb1ELXL",
+                "uri": "spotify:track:1bE7tFgpFBFy3mGJb1ELXL",
+                "name": "PAM",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Justin Quiles"
+                      },
+                      "uri": "spotify:artist:14zUHaJZo1mnYtn6IBRaRP"
+                    },
+                    {
+                      "profile": {
+                        "name": "Daddy Yankee"
+                      },
+                      "uri": "spotify:artist:4VMYDCV2IEDYJArk749S6m"
+                    },
+                    {
+                      "profile": {
+                        "name": "El Alfa"
+                      },
+                      "uri": "spotify:artist:2oQX8QiMXOyuqbcZEFsZfm"
+                    }
+                  ]
+                },
+                "albumOfTrack": {
+                  "id": "7fgNiGcbUExzi18Tzorsft",
+                  "name": "Reggaet\u00f3n Antiguo",
+                  "uri": "spotify:album:7fgNiGcbUExzi18Tzorsft"
+                },
+                "duration": {
+                  "totalMilliseconds": 201000
+                }
+              }
+            }
+          }
+        ],
+        "totalCount": 1000
+      }
+    }
+  }
+}

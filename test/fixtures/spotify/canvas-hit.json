@@ -1,0 +1,18 @@
+{
+  "object": "canvaslist.entries",
+  "request_id": "req_01a197f475f97798b1162647dbc281d1_eu",
+  "lookup": {
+    "type": "track_id",
+    "value": [
+      "39LLxExYz6ewLAcYrzQQyP"
+    ]
+  },
+  "data": {
+    "39LLxExYz6ewLAcYrzQQyP": {
+      "url": "https://canvaz.scdn.co/upload/licensor/3ZBqv9LoqAZkFanJh73zcz/video/43a973bb3b6247d28e58eb4becc2511c.cnvs.mp4",
+      "type": "VIDEO_LOOPING_RANDOM",
+      "fileId": "d038331468f73b83ab1f1b48c139bd44",
+      "uri": "spotify:canvas:23FVotK4ep2lELJNvR2Vti"
+    }
+  }
+}
