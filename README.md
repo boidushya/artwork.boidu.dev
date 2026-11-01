@@ -8,6 +8,7 @@ Finds Apple Music album artwork, including animated artwork, for a song. Runs as
 GET /?s=<track title>&a=<artist>&al=<album>&d=<duration in seconds>
 GET /?id=<numeric Apple Music album id>
 GET /?url=<music.apple.com album url>
+GET /canvas?s=<track title>&a=<artist>&al=<album>&d=<duration in seconds>
 GET /health
 ```
 
@@ -52,6 +53,25 @@ Calling `/` without parameters returns a short usage guide.
 
 Artwork and definitive answers carry `Cache-Control` headers and are cached by the Railway CDN. Requests with an `Authorization` header always reach the service.
 
+## Canvas
+
+`GET /canvas` takes the same `s`, `a`, `al` and `d` parameters as search and returns the looping canvas video for the track, if it has one.
+
+```json
+{ "trackId": "39LLxExYz6ewLAcYrzQQyP", "videoUrl": "https://canvaz.scdn.co/...cnvs.mp4" }
+```
+
+- `videoUrl`: direct MP4, portrait 9:16, served with `access-control-allow-origin: *`. Play it from the client; this service never proxies video.
+- `videoUrl: null` with a `trackId`: the track was found but has no canvas.
+
+| Status | Meaning | Cache it? |
+|--------|---------|-----------|
+| `200` with `videoUrl` | Found. | Yes. |
+| `200` with `videoUrl: null` | Track found, no canvas. | Yes, for a few days. |
+| `200` with `error` | No matching track. | Yes, for a few days. |
+| `429` | You are sending too many requests. | No. Slow down and cache on your side. |
+| `502` / `503` | Temporary upstream failure. | No. Retry later. |
+
 ## Development
 
 ```bash
@@ -75,6 +95,19 @@ npm run build && npm start
 | `MEDIA_USER_TOKEN` | unset | Apple Music user token, sent only when the scraped token stands in for a failed mint. |
 
 Search tries the minted token on `amp-api-edge` first, then `amp-api`. If both are rate limited it retries with the scraped web player token in the `us` storefront. Results are cached in Postgres and served stale when Apple rate limits us.
+
+## Canvas upstream tuning
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SPOTIFY_RATE` / `SPOTIFY_BURST` | `1` / `4` | Outbound track search rate. A lookup makes up to 3 searches. |
+| `CANVAS_STORE_RATE` / `CANVAS_STORE_BURST` | `5` / `10` | Outbound canvas store rate, one call per matched track. |
+| `SPOTIFY_RETRY_ATTEMPTS` | `1` | Attempts per request on 429. |
+| `SPOTIFY_TIMEOUT_MS` | `5000` | Per request timeout, after the queue wait. |
+| `SPOTIFY_CIRCUIT_THRESHOLD` | `3` | Consecutive 429s before a circuit opens. |
+| `SPOTIFY_CIRCUIT_BASE_OPEN_MS` / `SPOTIFY_CIRCUIT_MAX_OPEN_MS` | `30000` / `600000` | Circuit cooldown range; later trips multiply by `SPOTIFY_CIRCUIT_MULTIPLIER` (`2`). |
+
+Lookups are cached in Postgres (hits 30 days, misses 7 days) and served stale when upstream rate limits us.
 
 ## Priority gating (optional)
 
